@@ -15,4 +15,4 @@ DB_USERNAME=root
 DB_PASSWORD=
 
 for testing: 
-search mo lang ung [http](http://backend1.test/)
+search mo lang ung http://backend1.test
