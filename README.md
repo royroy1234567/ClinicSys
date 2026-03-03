@@ -2,7 +2,7 @@ git clone muna then after that download ung HERD
 
 Download Herd on https://herd.laravel.com/windows
 
-cd backend1
+cd backend1 then 
 composer install
 
 after that lagay mo ung project mo sa herd 
