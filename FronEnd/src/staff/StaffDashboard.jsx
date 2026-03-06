@@ -128,18 +128,6 @@ const StaffDashboard = () => {
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Button onClick={() => navigate('/appointments/new')} data-testid="new-appointment-button">
-            <Plus className="w-4 h-4 mr-2" />
-            New Appointment
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/patients/new')} data-testid="new-patient-button">
-            <UserPlus className="w-4 h-4 mr-2" />
-            Register Patient
-          </Button>
-        </div>
-
         {/* Today's Appointment Queue */}
         <Card data-testid="appointment-queue-card">
           <CardHeader>

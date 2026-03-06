@@ -26,7 +26,7 @@ export const AuthProvider = ({ children }) => {
   const login = (email, password) => {
     // Mock login - in real app, this would call API
     const mockUsers = [
-      { id: '1', email: 'admin@clinic.com', password: 'admin123', name: 'Admin User', role: 'admin' },
+      { id: '1', email: 'manager@clinic.com', password: 'manager123', name: 'Manager', role: 'manager' },
       { id: '2', email: 'staff@clinic.com', password: 'staff123', name: 'Staff User', role: 'staff' },
       { id: '3', email: 'doctor@clinic.com', password: 'doctor123', name: 'Dr. Smith', role: 'doctor' },
       { id: '4', email: 'patient@clinic.com', password: 'patient123', name: 'John Doe', role: 'patient' },

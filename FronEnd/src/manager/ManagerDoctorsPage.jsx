@@ -6,7 +6,6 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import {
   Search,
-  Plus,
   Stethoscope,
   Users,
   CalendarCheck,
@@ -175,13 +174,12 @@ const DoctorsPage = () => {
       setAppointments(apptData);
     } catch (err) {
       console.error('Error loading doctors:', err);
-      /* Fallback demo data so the page renders even without a real API */
       setDoctors([
-        { id: 1, name: 'Dr. Sarah Smith',   specialization: 'General Medicine', status: 'active',   email: 'sarah@clinic.com',   phone: '+63 912 001 0001', schedule: { days: 'Mon–Fri', hours: '8:00–17:00' } },
-        { id: 2, name: 'Dr. Michael Chen',  specialization: 'Pediatrics',       status: 'active',   email: 'mchen@clinic.com',   phone: '+63 912 001 0002', schedule: { days: 'Mon–Sat', hours: '8:00–12:00' } },
-        { id: 3, name: 'Dr. Reyna Torres',  specialization: 'Internal Medicine', status: 'on_leave', email: 'rtorres@clinic.com', phone: '+63 912 001 0003', schedule: { days: 'Tue–Sat', hours: '9:00–17:00' } },
-        { id: 4, name: 'Dr. James Lim',     specialization: 'General Medicine', status: 'active',   email: 'jlim@clinic.com',    phone: '+63 912 001 0004', schedule: { days: 'Mon–Fri', hours: '13:00–20:00' } },
-        { id: 5, name: 'Dr. Ana Reyes',     specialization: 'Dermatology',      status: 'inactive', email: 'areyes@clinic.com',  phone: '+63 912 001 0005', schedule: { days: 'Wed–Sat', hours: '10:00–16:00' } },
+        { id: 1, name: 'Dr. Sarah Smith',   specialization: 'General Medicine',  status: 'active',   email: 'sarah@clinic.com',   phone: '+63 912 001 0001', schedule: { days: 'Mon–Fri', hours: '8:00–17:00' } },
+        { id: 2, name: 'Dr. Michael Chen',  specialization: 'Pediatrics',        status: 'active',   email: 'mchen@clinic.com',   phone: '+63 912 001 0002', schedule: { days: 'Mon–Sat', hours: '8:00–12:00' } },
+        { id: 3, name: 'Dr. Reyna Torres',  specialization: 'Internal Medicine',  status: 'on_leave', email: 'rtorres@clinic.com', phone: '+63 912 001 0003', schedule: { days: 'Tue–Sat', hours: '9:00–17:00' } },
+        { id: 4, name: 'Dr. James Lim',     specialization: 'General Medicine',  status: 'active',   email: 'jlim@clinic.com',    phone: '+63 912 001 0004', schedule: { days: 'Mon–Fri', hours: '13:00–20:00' } },
+        { id: 5, name: 'Dr. Ana Reyes',     specialization: 'Dermatology',       status: 'inactive', email: 'areyes@clinic.com',  phone: '+63 912 001 0005', schedule: { days: 'Wed–Sat', hours: '10:00–16:00' } },
       ]);
       setAppointments([]);
     } finally {
@@ -201,9 +199,9 @@ const DoctorsPage = () => {
   });
 
   const stats = {
-    total:    doctors.length,
-    active:   doctors.filter(d => d.status === 'active').length,
-    onLeave:  doctors.filter(d => d.status === 'on_leave').length,
+    total:      doctors.length,
+    active:     doctors.filter(d => d.status === 'active').length,
+    onLeave:    doctors.filter(d => d.status === 'on_leave').length,
     todayAppts: appointments.length,
   };
 
@@ -231,18 +229,10 @@ const DoctorsPage = () => {
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <StatCard label="Total Doctors"      value={stats.total}      icon={Stethoscope}  iconColor="text-primary" />
-          <StatCard label="Active"             value={stats.active}     icon={UserCheck}    iconColor="text-green-600" />
-          <StatCard label="On Leave"           value={stats.onLeave}    icon={Clock}        iconColor="text-yellow-600" />
-          <StatCard label="Today's Appointments" value={stats.todayAppts} icon={CalendarCheck} iconColor="text-blue-600" />
-        </div>
-
-        {/* ── Actions ── */}
-        <div className="flex flex-wrap gap-3">
-          <Button onClick={() => navigate('/doctors/new')} data-testid="add-doctor-button">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Doctor
-          </Button>
+          <StatCard label="Total Doctors"        value={stats.total}      icon={Stethoscope}   iconColor="text-primary"      />
+          <StatCard label="Active"               value={stats.active}     icon={UserCheck}     iconColor="text-green-600"    />
+          <StatCard label="On Leave"             value={stats.onLeave}    icon={Clock}         iconColor="text-yellow-600"   />
+          <StatCard label="Today's Appointments" value={stats.todayAppts} icon={CalendarCheck} iconColor="text-blue-600"     />
         </div>
 
         {/* ── Doctor list card ── */}

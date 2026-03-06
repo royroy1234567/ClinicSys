@@ -136,7 +136,7 @@ export const mockConsultations = [
 ];
 
 export const mockUsers = [
-  { id: 'u1', email: 'admin@clinic.com', name: 'Admin User', role: 'admin', active: true },
+  { id: 'u1', email: 'manager@clinic.com', name: 'Manager', role: 'manager', active: true },
   { id: 'u2', email: 'staff@clinic.com', name: 'Staff User', role: 'staff', active: true },
   { id: 'u3', email: 'doctor1@clinic.com', name: 'Dr. Sarah Smith', role: 'doctor', active: true },
   { id: 'u4', email: 'doctor2@clinic.com', name: 'Dr. Michael Chen', role: 'doctor', active: true },
