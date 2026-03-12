@@ -34,6 +34,7 @@ return new class extends Migration
 
             // Account Credentials
             $table->string('password');
+            $table->string ('status')->default('Active');
 
             // Medical Information
             $table->string('blood_type')->nullable();

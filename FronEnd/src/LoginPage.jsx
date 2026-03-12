@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import { Stethoscope, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Stethoscope, Eye, EyeOff, AlertCircle, ShieldAlert } from 'lucide-react';
 
 const LoginPage = () => {
   const [email, setEmail]       = useState('');
@@ -10,22 +10,36 @@ const LoginPage = () => {
   const [remember, setRemember] = useState(false);
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const [shake, setShake]       = useState(false);
   const { login }               = useAuth();
   const navigate                = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    const result = login(email, password);
-    if (result.success) {
-      navigate('/dashboard');
-    } else {
-      setError(result.error);
-    }
-    setLoading(false);
+  const triggerShake = () => {
+    setShake(true);
+    setTimeout(() => setShake(false), 600);
   };
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError('');
+  setLoading(true);
+  try {
+    // ✅ Just pass email + password — AuthContext handles the fetch
+    const result = await login(email, password);
 
+    if (!result.success) {
+      setError(result.error);
+      triggerShake();
+      return;
+    }
+
+    navigate('/dashboard');
+  } catch (err) {
+    setError(err.message);
+    triggerShake();
+  } finally {
+    setLoading(false);
+  }
+};
   return (
     <div style={{
       minHeight: '100vh',
@@ -71,10 +85,8 @@ const LoginPage = () => {
         .login-left::before {
           content: '';
           position: absolute;
-          bottom: -60px;
-          left: -60px;
-          width: 260px;
-          height: 260px;
+          bottom: -60px; left: -60px;
+          width: 260px; height: 260px;
           border-radius: 50%;
           background: rgba(255,255,255,0.07);
           pointer-events: none;
@@ -82,10 +94,8 @@ const LoginPage = () => {
         .login-left::after {
           content: '';
           position: absolute;
-          top: -40px;
-          right: -80px;
-          width: 200px;
-          height: 200px;
+          top: -40px; right: -80px;
+          width: 200px; height: 200px;
           border-radius: 50%;
           background: rgba(255,255,255,0.05);
           pointer-events: none;
@@ -128,19 +138,20 @@ const LoginPage = () => {
           background: #fff;
           box-shadow: 0 0 0 3px rgba(37,99,235,0.10);
         }
+        .field-input.error-field {
+          border-color: #EF4444;
+          background: #FFF5F5;
+          box-shadow: 0 0 0 3px rgba(239,68,68,0.10);
+        }
         .pass-wrapper { position: relative; }
         .pass-wrapper .field-input { padding-right: 44px; }
         .pass-toggle {
           position: absolute;
-          right: 12px;
-          top: 50%;
+          right: 12px; top: 50%;
           transform: translateY(-50%);
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #94A3B8;
-          display: flex;
-          align-items: center;
+          background: none; border: none;
+          cursor: pointer; color: #94A3B8;
+          display: flex; align-items: center;
           padding: 2px;
           transition: color 0.15s;
         }
@@ -148,56 +159,40 @@ const LoginPage = () => {
 
         /* CHECKBOX */
         .check-row {
-          display: flex;
-          align-items: center;
+          display: flex; align-items: center;
           justify-content: space-between;
           margin-bottom: 22px;
         }
         .check-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 0.82rem;
-          color: #64748B;
-          cursor: pointer;
-          user-select: none;
+          display: flex; align-items: center;
+          gap: 8px; font-size: 0.82rem;
+          color: #64748B; cursor: pointer; user-select: none;
         }
         .custom-check {
           width: 16px; height: 16px;
-          border-radius: 4px;
-          border: 1.5px solid #CBD5E1;
+          border-radius: 4px; border: 1.5px solid #CBD5E1;
           background: #fff;
           display: flex; align-items: center; justify-content: center;
           transition: background 0.15s, border-color 0.15s;
           flex-shrink: 0;
         }
-        .custom-check.checked {
-          background: #2563EB;
-          border-color: #2563EB;
-        }
+        .custom-check.checked { background: #2563EB; border-color: #2563EB; }
         .forgot-link {
-          font-size: 0.82rem;
-          color: #2563EB;
-          text-decoration: none;
-          font-weight: 600;
+          font-size: 0.82rem; color: #2563EB;
+          text-decoration: none; font-weight: 600;
           transition: color 0.15s;
         }
         .forgot-link:hover { color: #1d4ed8; text-decoration: underline; }
 
         /* SUBMIT BTN */
         .btn-submit {
-          width: 100%;
-          padding: 13px;
-          background: #2563EB;
-          color: #fff;
-          border: none;
-          border-radius: 10px;
-          font-size: 0.95rem;
-          font-weight: 700;
+          width: 100%; padding: 13px;
+          background: #2563EB; color: #fff;
+          border: none; border-radius: 10px;
+          font-size: 0.95rem; font-weight: 700;
           cursor: pointer;
           transition: background 0.2s, transform 0.15s, box-shadow 0.15s;
-          font-family: inherit;
-          letter-spacing: 0.02em;
+          font-family: inherit; letter-spacing: 0.02em;
         }
         .btn-submit:hover:not(:disabled) {
           background: #1d4ed8;
@@ -206,19 +201,52 @@ const LoginPage = () => {
         }
         .btn-submit:disabled { opacity: 0.7; cursor: not-allowed; }
 
-        /* ERROR */
+        /* ERROR BOX */
         .error-box {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: #FEF2F2;
-          border: 1.5px solid #FECACA;
-          border-radius: 10px;
-          padding: 10px 14px;
+          border-radius: 12px;
+          padding: 12px 14px;
           margin-bottom: 18px;
           font-size: 0.82rem;
-          color: #DC2626;
+          overflow: hidden;
+          background: #FEF2F2;
+          border: 1.5px solid #FECACA;
         }
+        .error-box-inner {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+        }
+        .error-icon-wrap {
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          background: #FEE2E2;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .error-title {
+          font-size: 0.83rem;
+          font-weight: 700;
+          color: #DC2626;
+          margin-bottom: 2px;
+        }
+        .error-sub {
+          font-size: 0.75rem;
+          color: #EF4444;
+          opacity: 0.85;
+        }
+
+        /* SHAKE ANIMATION */
+        @keyframes shake {
+          0%  { transform: translateX(0); }
+          15% { transform: translateX(-6px); }
+          30% { transform: translateX(6px); }
+          45% { transform: translateX(-5px); }
+          60% { transform: translateX(5px); }
+          75% { transform: translateX(-3px); }
+          90% { transform: translateX(3px); }
+          100%{ transform: translateX(0); }
+        }
+        .shake { animation: shake 0.55s cubic-bezier(.36,.07,.19,.97) both; }
 
         /* DEMO CREDS */
         .demo-box {
@@ -229,26 +257,12 @@ const LoginPage = () => {
           padding: 14px 16px;
         }
         .demo-title {
-          font-size: 0.70rem;
-          font-weight: 700;
-          color: #2563EB;
-          text-transform: uppercase;
-          letter-spacing: 0.10em;
-          margin-bottom: 8px;
-          text-align: center;
+          font-size: 0.70rem; font-weight: 700;
+          color: #2563EB; text-transform: uppercase;
+          letter-spacing: 0.10em; margin-bottom: 8px; text-align: center;
         }
-        .demo-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 4px 12px;
-        }
-        .demo-item {
-          font-size: 0.72rem;
-          color: #475569;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
+        .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+        .demo-item { font-size: 0.72rem; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .demo-item strong { color: #1E293B; }
 
         /* SPINNER */
@@ -260,11 +274,10 @@ const LoginPage = () => {
           border-radius: 50%;
           animation: spin 0.7s linear infinite;
           display: inline-block;
-          margin-right: 8px;
-          vertical-align: middle;
+          margin-right: 8px; vertical-align: middle;
         }
 
-        /* BLOB ANIMATION */
+        /* BLOB */
         @keyframes blobPulse {
           0%, 100% { transform: scale(1) rotate(0deg); }
           50%       { transform: scale(1.08) rotate(5deg); }
@@ -276,7 +289,6 @@ const LoginPage = () => {
 
         {/* ── LEFT PANEL ── */}
         <div className="login-left">
-          {/* Logo */}
           <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 40 }}>
               <div style={{
@@ -293,39 +305,30 @@ const LoginPage = () => {
               </div>
             </div>
 
-            {/* Headline */}
             <h2 style={{
               fontFamily: "'Lora', serif",
-              fontSize: '3rem',
-              fontWeight: 600,
-              color: '#fff',
-              lineHeight: 1.2,
-              marginTop: 120,
-              marginBottom: 16,
-              marginLeft: 40,
-              textTransform: 'uppercase',
+              fontSize: '3rem', fontWeight: 600,
+              color: '#fff', lineHeight: 1.2,
+              marginTop: 120, marginBottom: 16,
+              marginLeft: 40, textTransform: 'uppercase',
               letterSpacing: '0.04em',
             }}>
               WELCOME
             </h2>
-            <p style={{ color: 'rgba(255,255,255,0.80)', fontSize: '0.82rem', fontWeight: 600, marginBottom: 14, marginLeft: 45 ,textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <p style={{ color: 'rgba(255,255,255,0.80)', fontSize: '0.82rem', fontWeight: 600, marginBottom: 14, marginLeft: 45, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               Your Trusted Partner in Health
             </p>
-            <p style={{ color: 'rgba(255,255,255,0.62)', fontSize: '0.80rem', lineHeight: 1.70,marginLeft: 45, maxWidth: 260,textAlign: 'center' }}>
+            <p style={{ color: 'rgba(255,255,255,0.62)', fontSize: '0.80rem', lineHeight: 1.70, marginLeft: 45, maxWidth: 260, textAlign: 'center' }}>
               Manage patient appointments, records, and clinic operations — all in one secure and easy-to-use system.
             </p>
           </div>
 
-          {/* Bottom decorative blob */}
           <div className="blob" style={{
             position: 'absolute', bottom: -70, left: -70,
-            width: 220, height: 220,
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.08)',
-            zIndex: 0,
+            width: 220, height: 220, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.08)', zIndex: 0,
           }}/>
 
-          {/* Hours badge */}
           <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -341,19 +344,16 @@ const LoginPage = () => {
 
         {/* ── RIGHT PANEL ── */}
         <div className="login-right">
-          {/* Back button */}
           <Link to="/" style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             fontSize: '0.80rem', fontWeight: 600, color: '#64748B',
             textDecoration: 'none', marginBottom: 24,
-            padding: '6px 12px 6px 8px',
-            borderRadius: 8,
-            border: '1.5px solid #E2E8F0',
-            background: '#F8FAFC',
+            padding: '6px 12px 6px 8px', borderRadius: 8,
+            border: '1.5px solid #E2E8F0', background: '#F8FAFC',
             transition: 'all 0.18s',
           }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#2563EB'; e.currentTarget.style.borderColor = '#2563EB'; e.currentTarget.style.background = '#EFF6FF'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#64748B'; e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.background = '#F8FAFC'; }}
+            onMouseEnter={e => { e.currentTarget.style.color='#2563EB'; e.currentTarget.style.borderColor='#2563EB'; e.currentTarget.style.background='#EFF6FF'; }}
+            onMouseLeave={e => { e.currentTarget.style.color='#64748B'; e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.background='#F8FAFC'; }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -361,31 +361,37 @@ const LoginPage = () => {
             Back to Home
           </Link>
 
-          {/* Header */}
           <div style={{ marginBottom: 28 }}>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1E293B', marginBottom: 6 }}>Sign In</h1>
             <p style={{ fontSize: '0.83rem', color: '#64748B' }}>Enter your credentials to access your account.</p>
           </div>
 
-          {/* Error */}
+          {/* ── ERROR BOX ── */}
           {error && (
-            <div className="error-box" data-testid="login-error">
-              <AlertCircle size={15} style={{ flexShrink: 0 }} />
-              <span>{error}</span>
+            <div className={`error-box ${shake ? 'shake' : ''}`} data-testid="login-error">
+              <div className="error-box-inner">
+                <div className="error-icon-wrap">
+                  <ShieldAlert size={16} color="#DC2626" />
+                </div>
+                <div>
+                  <p className="error-title">Wrong email or password</p>
+                  <p className="error-sub">Please double-check your credentials and try again.</p>
+                </div>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} className={shake ? 'shake' : ''}>
             {/* Email */}
             <div className="field-group">
               <label className="field-label" htmlFor="email">Email Address</label>
               <input
                 id="email"
-                className="field-input"
+                className={`field-input ${error ? 'error-field' : ''}`}
                 type="email"
                 placeholder="admin@clinic.com"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
+                onChange={e => { setEmail(e.target.value); setError(''); }}
                 required
                 data-testid="email-input"
               />
@@ -397,11 +403,11 @@ const LoginPage = () => {
               <div className="pass-wrapper">
                 <input
                   id="password"
-                  className="field-input"
+                  className={`field-input ${error ? 'error-field' : ''}`}
                   type={showPass ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={e => { setPassword(e.target.value); setError(''); }}
                   required
                   data-testid="password-input"
                 />
@@ -426,32 +432,18 @@ const LoginPage = () => {
               <a href="#" className="forgot-link">Forgot Password?</a>
             </div>
 
-            {/* Submit */}
             <button type="submit" className="btn-submit" disabled={loading} data-testid="login-submit-button">
               {loading ? <><span className="spinner"/>Signing in...</> : 'Sign In'}
             </button>
           </form>
 
-          {/* Register link */}
           <p style={{ textAlign: 'center', marginTop: 18, fontSize: '0.82rem', color: '#64748B' }}>
             Don't have an account?{' '}
             <Link to="/register" style={{ color: '#2563EB', fontWeight: 700, textDecoration: 'none' }}>
               Sign Up
             </Link>
           </p>
-
-          {/* Demo credentials */}
-          <div className="demo-box">
-            <div className="demo-title">Demo Credentials</div>
-            <div className="demo-grid">
-              <div className="demo-item"><strong>Admin:</strong> admin@clinic.com / admin123</div>
-              <div className="demo-item"><strong>Staff:</strong> staff@clinic.com / staff123</div>
-              <div className="demo-item"><strong>Doctor:</strong> doctor@clinic.com / doctor123</div>
-              <div className="demo-item"><strong>Patient:</strong> patient@clinic.com / patient123</div>
-            </div>
-          </div>
         </div>
-
       </div>
     </div>
   );

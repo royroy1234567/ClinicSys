@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
-/* ── Scroll-reveal hook ── */
 function useReveal(threshold = 0.15) {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
@@ -16,7 +15,6 @@ function useReveal(threshold = 0.15) {
   return [ref, visible];
 }
 
-/* ── Reusable animated wrapper ── */
 function Reveal({ children, delay = 0, direction = "up", className = "" }) {
   const [ref, visible] = useReveal();
   const translate = { up: "translateY(40px)", down: "translateY(-40px)", left: "translateX(-40px)", right: "translateX(40px)" };
@@ -31,7 +29,6 @@ function Reveal({ children, delay = 0, direction = "up", className = "" }) {
   );
 }
 
-/* ── Counter animation ── */
 function AnimatedCounter({ target, suffix = "" }) {
   const [count, setCount] = useState(0);
   const [ref, visible] = useReveal();
@@ -82,14 +79,15 @@ export default function ClinicSysLanding() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeDay, setActiveDay] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", onScroll);
-    // highlight today
     const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     setActiveDay(days[new Date().getDay()]);
-    return () => window.removeEventListener("scroll", onScroll);
+    const clock = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => { window.removeEventListener("scroll", onScroll); clearInterval(clock); };
   }, []);
 
   const scrollTo = (href) => {
@@ -104,6 +102,12 @@ export default function ClinicSysLanding() {
     { label: "Appointments", href: "#appointments" },
     { label: "Contact",      href: "#contact" },
   ];
+
+  const todaySchedule = SCHEDULE.find(s => s.day === activeDay);
+  const isOpen = todaySchedule?.open ?? false;
+
+  const formatTime = (date) => date.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true });
+  const formatDate = (date) => date.toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric" });
 
   return (
     <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", background: "#F8FAFC", color: "#1E293B", overflowX: "hidden" }}>
@@ -128,7 +132,6 @@ export default function ClinicSysLanding() {
 
         .serif { font-family: 'Lora', serif; }
 
-        /* NAV */
         .nav-glass {
           backdrop-filter: blur(16px);
           background: rgba(248,250,252,0.92);
@@ -136,7 +139,6 @@ export default function ClinicSysLanding() {
           box-shadow: 0 1px 16px rgba(37,99,235,0.06);
         }
 
-        /* HERO */
         .hero-bg {
           background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 40%, #E0F2FE 70%, #F0FDF4 100%);
           position: relative;
@@ -149,7 +151,6 @@ export default function ClinicSysLanding() {
           pointer-events: none;
         }
 
-        /* BUTTONS */
         .btn-primary {
           background: var(--primary);
           color: #fff;
@@ -163,6 +164,7 @@ export default function ClinicSysLanding() {
           display: inline-flex;
           align-items: center;
           gap: 8px;
+          text-decoration: none;
         }
         .btn-primary:hover {
           background: var(--primary-dk);
@@ -217,7 +219,6 @@ export default function ClinicSysLanding() {
         }
         .btn-ghost-white:hover { background: rgba(255,255,255,0.12); transform: translateY(-2px); }
 
-        /* CARDS */
         .service-card {
           background: #fff;
           border: 1.5px solid #E2E8F0;
@@ -226,6 +227,7 @@ export default function ClinicSysLanding() {
           display: flex;
           gap: 16px;
           transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+          height: 100%;
         }
         .service-card:hover {
           transform: translateY(-6px);
@@ -239,6 +241,7 @@ export default function ClinicSysLanding() {
           border-radius: 18px;
           padding: 28px 24px;
           transition: background 0.2s, transform 0.2s;
+          height: 100%;
         }
         .reason-card:hover {
           background: rgba(255,255,255,0.12);
@@ -252,13 +255,13 @@ export default function ClinicSysLanding() {
           padding: 28px 20px;
           text-align: center;
           transition: transform 0.2s, box-shadow 0.2s;
+          height: 100%;
         }
         .contact-card:hover {
           transform: translateY(-4px);
           box-shadow: 0 12px 32px rgba(37,99,235,0.10);
         }
 
-        /* CHIP */
         .chip {
           display: inline-block;
           background: var(--secondary);
@@ -285,7 +288,6 @@ export default function ClinicSysLanding() {
           margin-bottom: 14px;
         }
 
-        /* ACCENT LINE */
         .accent-line {
           width: 48px;
           height: 3px;
@@ -294,7 +296,6 @@ export default function ClinicSysLanding() {
           margin: 12px auto 0;
         }
 
-        /* PULSE */
         .pulse {
           animation: pulseRing 2.4s ease-out infinite;
         }
@@ -304,7 +305,6 @@ export default function ClinicSysLanding() {
           100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
         }
 
-        /* HERO CARD FLOAT */
         .float-card {
           animation: floatY 4s ease-in-out infinite;
         }
@@ -313,15 +313,22 @@ export default function ClinicSysLanding() {
           50%       { transform: translateY(-12px); }
         }
 
-        /* SCHEDULE TABLE */
+        /* Availability bar segments */
+        .avail-bar-seg {
+          flex: 1;
+          height: 8px;
+          border-radius: 99px;
+          transition: opacity 0.2s;
+        }
+
+        /* Progress ring */
+        @keyframes ringFill {
+          from { stroke-dashoffset: 220; }
+        }
+
         .sched-row { transition: background 0.15s; }
         .sched-row:hover { background: #EFF6FF; }
 
-        /* TEAL ACCENT for accent elements */
-        .teal-icon-bg { background: rgba(13,148,136,0.10); }
-        .teal-text { color: var(--accent); }
-
-        /* nav link */
         .nav-link {
           font-size: 0.875rem;
           font-weight: 500;
@@ -334,7 +341,6 @@ export default function ClinicSysLanding() {
         }
         .nav-link:hover { color: var(--primary); }
 
-        /* STEP CONNECTOR */
         .step-circle {
           width: 44px; height: 44px;
           border-radius: 50%;
@@ -349,7 +355,6 @@ export default function ClinicSysLanding() {
           box-shadow: 0 4px 16px rgba(37,99,235,0.28);
         }
 
-        /* STAT CARD */
         .stat-card-main {
           background: var(--primary);
           border-radius: 18px;
@@ -363,32 +368,56 @@ export default function ClinicSysLanding() {
           padding: 28px 24px;
         }
 
-        /* SCROLLBAR */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #F8FAFC; }
         ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
 
+        /* ── Responsive ── */
+        .hidden-mobile { display: flex !important; }
+        .show-mobile   { display: none  !important; }
+
+        .hero-grid        { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+        .two-col          { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
+        .services-grid    { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+        .four-col         { display: grid; grid-template-columns: repeat(4,1fr); gap: 20px; }
+        .footer-grid      { display: grid; grid-template-columns: repeat(4,1fr); gap: 40px; }
+
+        @media (max-width: 1024px) {
+          .four-col    { grid-template-columns: repeat(2,1fr); }
+          .footer-grid { grid-template-columns: repeat(2,1fr); }
+        }
+
+        @media (max-width: 900px) {
+          .services-grid { grid-template-columns: repeat(2,1fr); }
+        }
+
         @media (max-width: 768px) {
-          .hero-card { display: none; }
+          .hidden-mobile { display: none  !important; }
+          .show-mobile   { display: flex  !important; }
+          .hero-grid     { grid-template-columns: 1fr; gap: 40px; }
+          .two-col       { grid-template-columns: 1fr; gap: 40px; }
+          .hero-card-col { display: none !important; }
+        }
+
+        @media (max-width: 560px) {
+          .services-grid { grid-template-columns: 1fr; }
+          .four-col      { grid-template-columns: 1fr 1fr; }
+          .footer-grid   { grid-template-columns: 1fr 1fr; }
+        }
+
+        @media (max-width: 400px) {
+          .four-col      { grid-template-columns: 1fr; }
+          .footer-grid   { grid-template-columns: 1fr; }
         }
       `}</style>
 
-      {/* ════════════════ NAVBAR ════════════════ */}
-      <nav style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 50,
-        transition: "all 0.3s"
-      }} className={scrolled ? "nav-glass" : ""}>
+      {/* ══ NAVBAR ══ */}
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, transition: "all 0.3s" }}
+        className={scrolled ? "nav-glass" : ""}>
         <div style={{ maxWidth: 1152, margin: "0 auto", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          {/* Logo */}
           <Link to="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-            <div style={{
-              width: 38, height: 38, borderRadius: 10,
-              background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(37,99,235,0.30)"
-            }}>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M10 3v14M3 10h14" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"/>
-              </svg>
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(37,99,235,0.30)" }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3v14M3 10h14" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"/></svg>
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text)", lineHeight: 1.1 }}>ClinicSys</div>
@@ -396,27 +425,23 @@ export default function ClinicSysLanding() {
             </div>
           </Link>
 
-          {/* Desktop links */}
-          <div style={{ display: "flex", alignItems: "center", gap: 32 }} className="hidden-mobile">
+          <div style={{ alignItems: "center", gap: 32 }} className="hidden-mobile">
             {navLinks.map(({ label, href }) => (
               <button key={label} onClick={() => scrollTo(href)} className="nav-link">{label}</button>
             ))}
           </div>
 
-          {/* Desktop CTAs */}
-          <div style={{ display: "flex", gap: 10 }} className="hidden-mobile">
+          <div style={{ gap: 10 }} className="hidden-mobile">
             <Link to="/login"><button className="btn-outline" style={{ padding: "9px 20px", fontSize: "0.82rem" }}>🔐 Patient Login</button></Link>
             <Link to="/login"><button className="btn-primary" style={{ padding: "9px 20px", fontSize: "0.82rem" }}>📅 Book Now</button></Link>
           </div>
 
-          {/* Mobile burger */}
           <button onClick={() => setMenuOpen(!menuOpen)}
-            style={{ display: "none", background: "none", border: "none", cursor: "pointer", padding: 8, flexDirection: "column", gap: 5 }}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 8, flexDirection: "column", gap: 5 }}
             className="show-mobile">
             {[0,1,2].map(i => (
               <div key={i} style={{
-                width: 22, height: 2, background: "var(--text)", borderRadius: 2,
-                transition: "all 0.2s",
+                width: 22, height: 2, background: "var(--text)", borderRadius: 2, transition: "all 0.2s",
                 transform: menuOpen && i === 0 ? "rotate(45deg) translate(5px,5px)" : menuOpen && i === 2 ? "rotate(-45deg) translate(5px,-5px)" : "none",
                 opacity: menuOpen && i === 1 ? 0 : 1
               }}/>
@@ -424,7 +449,6 @@ export default function ClinicSysLanding() {
           </button>
         </div>
 
-        {/* Mobile menu */}
         {menuOpen && (
           <div style={{ background: "#fff", borderTop: "1px solid #E2E8F0", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}>
             {navLinks.map(({ label, href }) => (
@@ -438,20 +462,9 @@ export default function ClinicSysLanding() {
         )}
       </nav>
 
-      <style>{`
-        .hidden-mobile { display: flex !important; }
-        .show-mobile   { display: none !important; }
-        @media (max-width: 768px) {
-          .hidden-mobile { display: none !important; }
-          .show-mobile   { display: flex !important; }
-        }
-      `}</style>
-
-      {/* ════════════════ HERO ════════════════ */}
-      <section className="hero-bg" style={{ minHeight: "100vh", display: "flex", alignItems: "center", paddingTop: 88, paddingBottom: 64, padding: "88px 24px 64px" }}>
-        <div style={{ maxWidth: 1152, margin: "0 auto", width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 56, alignItems: "center" }}
-          className="hero-grid">
-          <style>{`.hero-grid { grid-template-columns: 1fr 1fr; } @media(max-width:768px){ .hero-grid { grid-template-columns: 1fr; } }`}</style>
+      {/* ══ HERO ══ */}
+      <section className="hero-bg" style={{ minHeight: "100vh", display: "flex", alignItems: "center", padding: "104px 24px 64px" }}>
+        <div style={{ maxWidth: 1152, margin: "0 auto", width: "100%" }} className="hero-grid">
 
           {/* Left */}
           <Reveal direction="left">
@@ -461,8 +474,7 @@ export default function ClinicSysLanding() {
             </div>
 
             <h1 className="serif" style={{ fontSize: "clamp(2.2rem, 5vw, 3.6rem)", lineHeight: 1.15, color: "var(--text)", marginBottom: 12 }}>
-              Welcome to<br/>
-              <span style={{ color: "var(--primary)" }}>ClinicSys</span>
+              Welcome to<br/><span style={{ color: "var(--primary)" }}>ClinicSys</span>
             </h1>
             <p className="serif" style={{ fontSize: "1.15rem", color: "var(--accent)", fontStyle: "italic", marginBottom: 20 }}>
               "Your Trusted Partner in Health and Wellness"
@@ -482,63 +494,102 @@ export default function ClinicSysLanding() {
             </div>
           </Reveal>
 
-          {/* Right: floating appointment card */}
-          <Reveal direction="right" delay={150}>
-            <div className="float-card hero-card" style={{ position: "relative" }}>
-              {/* shadow card */}
-              <div style={{ position: "absolute", top: 10, left: 10, right: -6, bottom: -10, background: "var(--secondary)", borderRadius: 24, opacity: 0.6 }}></div>
+          {/* Right: Clinic Status Card */}
+          <div className="hero-card-col">
+            <Reveal direction="right" delay={150}>
+              <div className="float-card" style={{ position: "relative" }}>
+                {/* Shadow layer */}
+                <div style={{ position: "absolute", top: 12, left: 10, right: -8, bottom: -12, background: "var(--secondary)", borderRadius: 28, opacity: 0.5 }}/>
 
-              {/* main card */}
-              <div style={{ position: "relative", background: "#fff", borderRadius: 24, boxShadow: "0 24px 64px rgba(37,99,235,0.14)", padding: 24, border: "1.5px solid #E2E8F0" }}>
-                {/* header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 16, borderBottom: "1px solid #F1F5F9", marginBottom: 16 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, background: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🏥</div>
-                  <div>
-                    <div style={{ fontWeight: 700, color: "var(--text)" }}>ClinicSys</div>
-                    <div style={{ fontSize: "0.72rem", color: "var(--primary)", fontWeight: 600 }}>General Clinic · Today</div>
+                {/* Card */}
+                <div style={{ position: "relative", background: "#fff", borderRadius: 28, boxShadow: "0 24px 64px rgba(37,99,235,0.14)", padding: 28, border: "1.5px solid #E2E8F0" }}>
+
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🏥</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "1rem" }}>ClinicSys</div>
+                      <div style={{ fontSize: "0.72rem", color: "#94A3B8" }}>{formatDate(currentTime)}</div>
+                    </div>
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 5,
+                      background: isOpen ? "#DCFCE7" : "#FEE2E2",
+                      color: isOpen ? "#15803d" : "#DC2626",
+                      fontSize: "0.7rem", fontWeight: 700,
+                      padding: "5px 12px", borderRadius: 99
+                    }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: isOpen ? "#16A34A" : "#DC2626", animation: isOpen ? "pulseRing 2.4s ease-out infinite" : "none" }}/>
+                      {isOpen ? "OPEN NOW" : "CLOSED"}
+                    </div>
                   </div>
-                  <span style={{ marginLeft: "auto", background: "#DCFCE7", color: "var(--success)", fontSize: "0.65rem", fontWeight: 700, padding: "3px 10px", borderRadius: 99 }}>OPEN</span>
+
+                  {/* Time display */}
+                  <div style={{ background: "linear-gradient(135deg, #EFF6FF, #DBEAFE)", borderRadius: 18, padding: "20px 24px", marginBottom: 20, textAlign: "center" }}>
+                    <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--primary)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>Current Time</div>
+                    <div className="serif" style={{ fontSize: "2.8rem", fontWeight: 600, color: "var(--primary)", lineHeight: 1, marginBottom: 4 }}>
+                      {formatTime(currentTime)}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#64748B" }}>
+                      {isOpen ? `Open until ${todaySchedule?.hours?.split("–")[1]?.trim() ?? "5:00 PM"}` : "Opens Monday at 8:00 AM"}
+                    </div>
+                  </div>
+
+                  {/* Today's availability stats */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text)" }}>Today's Slots</div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--success)", fontWeight: 600 }}>Slots available</div>
+                    </div>
+                    {/* Availability bar */}
+                    <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                      {Array.from({ length: 14 }).map((_, i) => (
+                        <div key={i} className="avail-bar-seg" style={{
+                          background: i < 9 ? "#BFDBFE" : "#E2E8F0",
+                          opacity: i < 9 ? 1 : 0.5
+                        }}/>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68rem", color: "#94A3B8" }}>
+                      <span>🔵 9 booked</span>
+                      <span>⬜ 5 remaining</span>
+                    </div>
+                  </div>
+
+                  {/* Quick stats row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
+                    {[
+                      { icon: "🩺", label: "Services", value: "6" },
+                      { icon: "👨‍⚕️", label: "Doctors", value: "3" },
+                      { icon: "⏱️", label: "Wait Time", value: "~15m" },
+                    ].map((s, i) => (
+                      <div key={i} style={{ background: "#F8FAFC", borderRadius: 12, padding: "12px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
+                        <div style={{ fontSize: "1.2rem", marginBottom: 4 }}>{s.icon}</div>
+                        <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.9rem", lineHeight: 1 }}>{s.value}</div>
+                        <div style={{ fontSize: "0.62rem", color: "#94A3B8", marginTop: 2 }}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Link to="/login" style={{ display: "block" }}>
+                    <button className="btn-primary" style={{ width: "100%", justifyContent: "center", borderRadius: 14, padding: "13px 28px" }}>
+                      📅 Book My Appointment
+                    </button>
+                  </Link>
                 </div>
 
-                <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Today's Appointments</div>
-
-                {[
-                  { time: "9:00 AM",  name: "Maria Santos",  type: "Consultation",  status: "Ongoing",   sc: "#DBEAFE", tc: "#1d4ed8" },
-                  { time: "10:30 AM", name: "Juan dela Cruz", type: "Check-up",      status: "Scheduled", sc: "#FEF9C3", tc: "#92400e" },
-                  { time: "12:00 PM", name: "Ana Reyes",      type: "Wound Care",   status: "Scheduled", sc: "#FEF9C3", tc: "#92400e" },
-                  { time: "2:00 PM",  name: "Carlos Gomez",   type: "BP Monitoring", status: "Completed", sc: "#DCFCE7", tc: "#15803d" },
-                ].map((a, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: i < 3 ? "1px solid #F8FAFC" : "none" }}>
-                    <div style={{ fontSize: "0.72rem", color: "#94A3B8", width: 58, flexShrink: 0 }}>{a.time}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text)" }}>{a.name}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8" }}>{a.type}</div>
-                    </div>
-                    <span style={{ background: a.sc, color: a.tc, fontSize: "0.62rem", fontWeight: 700, padding: "3px 8px", borderRadius: 99 }}>{a.status}</span>
-                  </div>
-                ))}
-
-                <Link to="/login" style={{ display: "block", marginTop: 16 }}>
-                  <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }}>+ Book Your Slot</button>
-                </Link>
+                {/* Floating badge */}
+                <div style={{ position: "absolute", top: -14, right: 20, background: "var(--primary)", color: "#fff", fontSize: "0.7rem", fontWeight: 700, padding: "6px 14px", borderRadius: 99, boxShadow: "0 4px 16px rgba(37,99,235,0.35)", whiteSpace: "nowrap" }}>
+                  ✅ 5 Slots Open Today
+                </div>
               </div>
-
-              {/* floating badge top */}
-              <div style={{ position: "absolute", top: -14, right: 16, background: "var(--primary)", color: "#fff", fontSize: "0.72rem", fontWeight: 700, padding: "6px 14px", borderRadius: 99, boxShadow: "0 4px 16px rgba(37,99,235,0.35)" }}>
-                4 Appointments Today
-              </div>
-            </div>
-          </Reveal>
+            </Reveal>
+          </div>
         </div>
       </section>
 
-      {/* ════════════════ ABOUT ════════════════ */}
+      {/* ══ ABOUT ══ */}
       <section id="about" style={{ padding: "96px 24px", background: "#fff" }}>
-        <div style={{ maxWidth: 1152, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}
-          className="two-col">
-          <style>{`.two-col { grid-template-columns: 1fr 1fr; } @media(max-width:768px){ .two-col { grid-template-columns: 1fr; } }`}</style>
-
-          {/* Stats grid */}
+        <div style={{ maxWidth: 1152, margin: "0 auto" }} className="two-col">
           <Reveal direction="left">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               {[
@@ -557,7 +608,6 @@ export default function ClinicSysLanding() {
             </div>
           </Reveal>
 
-          {/* Text */}
           <Reveal direction="right" delay={100}>
             <span className="chip">About Us</span>
             <h2 className="serif" style={{ fontSize: "clamp(1.8rem, 3.5vw, 2.5rem)", color: "var(--text)", marginBottom: 20, lineHeight: 1.25 }}>
@@ -580,22 +630,21 @@ export default function ClinicSysLanding() {
         </div>
       </section>
 
-      {/* ════════════════ SERVICES ════════════════ */}
+      {/* ══ SERVICES ══ */}
       <section id="services" style={{ padding: "96px 24px", background: "var(--bg)" }}>
         <div style={{ maxWidth: 1152, margin: "0 auto" }}>
           <Reveal>
             <div style={{ textAlign: "center", marginBottom: 56 }}>
               <span className="chip">Our Services</span>
               <h2 className="serif" style={{ fontSize: "clamp(1.8rem, 3.5vw, 2.5rem)", color: "var(--text)" }}>What We Offer</h2>
-              <div className="accent-line"></div>
+              <div className="accent-line"/>
               <p style={{ color: "#64748B", marginTop: 16, maxWidth: 500, margin: "16px auto 0", fontSize: "0.92rem" }}>
                 From routine check-ups to common illness treatment — primary care services you and your family need.
               </p>
             </div>
           </Reveal>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }} className="services-grid">
-            <style>{`.services-grid { grid-template-columns: repeat(3,1fr); } @media(max-width:900px){ .services-grid { grid-template-columns: repeat(2,1fr); } } @media(max-width:560px){ .services-grid { grid-template-columns: 1fr; } }`}</style>
+          <div className="services-grid">
             {SERVICES.map((s, i) => (
               <Reveal key={i} delay={i * 80}>
                 <div className="service-card">
@@ -611,12 +660,9 @@ export default function ClinicSysLanding() {
         </div>
       </section>
 
-      {/* ════════════════ APPOINTMENTS ════════════════ */}
+      {/* ══ APPOINTMENTS ══ */}
       <section id="appointments" style={{ padding: "96px 24px", background: "#fff" }}>
-        <div style={{ maxWidth: 1152, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "start" }}
-          className="two-col">
-
-          {/* Steps */}
+        <div style={{ maxWidth: 1152, margin: "0 auto" }} className="two-col">
           <Reveal direction="left">
             <span className="chip">Book Online</span>
             <h2 className="serif" style={{ fontSize: "clamp(1.8rem, 3.5vw, 2.4rem)", color: "var(--text)", marginBottom: 12, lineHeight: 1.25 }}>
@@ -628,10 +674,10 @@ export default function ClinicSysLanding() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               {[
-                { step: "1", title: "Log In or Register",       desc: "Create a patient account or log in if you already have one.", icon: "🔐" },
-                { step: "2", title: "Choose Date & Time",       desc: "Pick a schedule that works best for you from available slots.", icon: "📅" },
-                { step: "3", title: "Fill in Your Details",     desc: "Provide your reason for visit and any relevant information.", icon: "📝" },
-                { step: "4", title: "Receive Confirmation",     desc: "Get a booking confirmation and see you at the clinic!", icon: "✅" },
+                { step: "1", title: "Log In or Register",   desc: "Create a patient account or log in if you already have one.", icon: "🔐" },
+                { step: "2", title: "Choose Date & Time",   desc: "Pick a schedule that works best for you from available slots.", icon: "📅" },
+                { step: "3", title: "Fill in Your Details", desc: "Provide your reason for visit and any relevant information.", icon: "📝" },
+                { step: "4", title: "Receive Confirmation", desc: "Get a booking confirmation and see you at the clinic!", icon: "✅" },
               ].map((s, i) => (
                 <div key={i} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
                   <div className="step-circle">{s.step}</div>
@@ -648,7 +694,6 @@ export default function ClinicSysLanding() {
             </Link>
           </Reveal>
 
-          {/* Schedule */}
           <Reveal direction="right" delay={120}>
             <div style={{ borderRadius: 20, overflow: "hidden", border: "1.5px solid #E2E8F0", boxShadow: "0 8px 32px rgba(37,99,235,0.08)" }}>
               <div style={{ background: "var(--primary)", padding: "20px 24px" }}>
@@ -668,11 +713,9 @@ export default function ClinicSysLanding() {
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: "0.83rem", color: row.open ? "#475569" : "var(--danger)" }}>{row.hours}</span>
-                      <span style={{
-                        fontSize: "0.60rem", fontWeight: 700, padding: "3px 8px", borderRadius: 99,
-                        background: row.open ? "#DCFCE7" : "#FEE2E2",
-                        color: row.open ? "var(--success)" : "var(--danger)"
-                      }}>{row.open ? "OPEN" : "CLOSED"}</span>
+                      <span style={{ fontSize: "0.60rem", fontWeight: 700, padding: "3px 8px", borderRadius: 99, background: row.open ? "#DCFCE7" : "#FEE2E2", color: row.open ? "var(--success)" : "var(--danger)" }}>
+                        {row.open ? "OPEN" : "CLOSED"}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -682,9 +725,9 @@ export default function ClinicSysLanding() {
         </div>
       </section>
 
-      {/* ════════════════ WHY CHOOSE US ════════════════ */}
+      {/* ══ WHY US ══ */}
       <section style={{ padding: "96px 24px", background: "#1E293B", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "28px 28px", pointerEvents: "none" }}></div>
+        <div style={{ position: "absolute", inset: 0, opacity: 0.04, backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "28px 28px", pointerEvents: "none" }}/>
         <div style={{ maxWidth: 1152, margin: "0 auto", position: "relative" }}>
           <Reveal>
             <div style={{ textAlign: "center", marginBottom: 56 }}>
@@ -696,11 +739,10 @@ export default function ClinicSysLanding() {
             </div>
           </Reveal>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }} className="four-col">
-            <style>{`.four-col { grid-template-columns: repeat(4,1fr); } @media(max-width:900px){ .four-col { grid-template-columns: repeat(2,1fr); } } @media(max-width:480px){ .four-col { grid-template-columns: 1fr; } }`}</style>
+          <div className="four-col">
             {REASONS.map((r, i) => (
               <Reveal key={i} delay={i * 90}>
-                <div className="reason-card" style={{ height: "100%" }}>
+                <div className="reason-card">
                   <div style={{ fontSize: "2rem", marginBottom: 16 }}>{r.icon}</div>
                   <h3 style={{ fontWeight: 700, color: "#fff", marginBottom: 10, fontSize: "1rem" }}>{r.title}</h3>
                   <p style={{ color: "#94A3B8", fontSize: "0.83rem", lineHeight: 1.65 }}>{r.desc}</p>
@@ -711,18 +753,18 @@ export default function ClinicSysLanding() {
         </div>
       </section>
 
-      {/* ════════════════ CONTACT ════════════════ */}
+      {/* ══ CONTACT ══ */}
       <section id="contact" style={{ padding: "96px 24px", background: "var(--bg)" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
           <Reveal>
             <div style={{ textAlign: "center", marginBottom: 56 }}>
               <span className="chip">Get In Touch</span>
               <h2 className="serif" style={{ fontSize: "clamp(1.8rem, 3.5vw, 2.5rem)", color: "var(--text)" }}>Contact & Location</h2>
-              <div className="accent-line"></div>
+              <div className="accent-line"/>
             </div>
           </Reveal>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 40 }} className="four-col">
+          <div className="four-col" style={{ marginBottom: 40 }}>
             {[
               { icon: "📍", label: "Address",      value: "123 Rizal Avenue,\nQuezon City, Metro Manila" },
               { icon: "📞", label: "Phone",        value: "(02) 8-000-0000\n+63 912 345 6789" },
@@ -739,10 +781,9 @@ export default function ClinicSysLanding() {
             ))}
           </div>
 
-          {/* CTA strip */}
           <Reveal>
             <div style={{ background: "var(--primary)", borderRadius: 20, padding: "48px 40px", textAlign: "center", position: "relative", overflow: "hidden" }}>
-              <div style={{ position: "absolute", inset: 0, opacity: 0.08, backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "22px 22px", pointerEvents: "none" }}></div>
+              <div style={{ position: "absolute", inset: 0, opacity: 0.08, backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "22px 22px", pointerEvents: "none" }}/>
               <div style={{ position: "relative" }}>
                 <h3 className="serif" style={{ fontSize: "1.7rem", color: "#fff", marginBottom: 10 }}>Ready to Schedule Your Visit?</h3>
                 <p style={{ color: "#BFDBFE", marginBottom: 28, fontSize: "0.92rem" }}>Book online now or drop by during clinic hours — we're here for you.</p>
@@ -756,56 +797,42 @@ export default function ClinicSysLanding() {
         </div>
       </section>
 
-      {/* ════════════════ FOOTER ════════════════ */}
+      {/* ══ FOOTER ══ */}
       <footer style={{ background: "#0F172A", color: "#fff", padding: "64px 24px 32px" }}>
-        <div style={{ maxWidth: 1152, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 40, marginBottom: 48 }} className="four-col">
-          {/* Brand */}
+        <div style={{ maxWidth: 1152, margin: "0 auto", marginBottom: 48 }} className="footer-grid">
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                  <path d="M10 3v14M3 10h14" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"/>
-                </svg>
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 3v14M3 10h14" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"/></svg>
               </div>
               <div>
                 <div style={{ fontWeight: 700 }}>ClinicSys</div>
                 <div style={{ fontSize: "0.62rem", color: "#60A5FA", fontWeight: 700, letterSpacing: "0.08em" }}>GENERAL CLINIC</div>
               </div>
             </div>
-            <p style={{ color: "#64748B", fontSize: "0.82rem", lineHeight: 1.7 }}>
-              Your trusted partner in health and wellness. Safe, affordable, and quality primary care.
-            </p>
+            <p style={{ color: "#64748B", fontSize: "0.82rem", lineHeight: 1.7 }}>Your trusted partner in health and wellness. Safe, affordable, and quality primary care.</p>
           </div>
 
-          {/* Quick Links */}
           <div>
             <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#334155", marginBottom: 16 }}>Quick Links</div>
-            {[{ label: "About Us", href: "#about" }, { label: "Services", href: "#services" }, { label: "Appointments", href: "#appointments" }, { label: "Contact", href: "#contact" }]
-              .map(({ label, href }) => (
-                <button key={label} onClick={() => scrollTo(href)} style={{ display: "block", fontSize: "0.83rem", color: "#64748B", marginBottom: 10, background: "none", border: "none", cursor: "pointer", textAlign: "left", transition: "color 0.15s", padding: 0 }}
-                  onMouseEnter={e => e.target.style.color = "#fff"} onMouseLeave={e => e.target.style.color = "#64748B"}>
-                  {label}
-                </button>
-              ))}
+            {[{ label: "About Us", href: "#about" }, { label: "Services", href: "#services" }, { label: "Appointments", href: "#appointments" }, { label: "Contact", href: "#contact" }].map(({ label, href }) => (
+              <button key={label} onClick={() => scrollTo(href)} style={{ display: "block", fontSize: "0.83rem", color: "#64748B", marginBottom: 10, background: "none", border: "none", cursor: "pointer", textAlign: "left", transition: "color 0.15s", padding: 0 }}
+                onMouseEnter={e => e.target.style.color = "#fff"} onMouseLeave={e => e.target.style.color = "#64748B"}>
+                {label}
+              </button>
+            ))}
           </div>
 
-          {/* Services */}
           <div>
             <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#334155", marginBottom: 16 }}>Services</div>
-            {["General Consultation", "Health Check-ups", "Common Illness Treatment", "BP & Vital Monitoring", "Minor Wound Care", "Medical Certificates"].map(s => (
+            {["General Consultation","Health Check-ups","Common Illness Treatment","BP & Vital Monitoring","Minor Wound Care","Medical Certificates"].map(s => (
               <div key={s} style={{ fontSize: "0.83rem", color: "#64748B", marginBottom: 8 }}>{s}</div>
             ))}
           </div>
 
-          {/* Contact */}
           <div>
             <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#334155", marginBottom: 16 }}>Contact</div>
-            {[
-              "📍 123 Rizal Ave., Quezon City",
-              "📞 (02) 8-000-0000",
-              "📧 support@clinicsys.ph",
-              "🕒 Mon–Sat, 8AM–5PM"
-            ].map(c => (
+            {["📍 123 Rizal Ave., Quezon City","📞 (02) 8-000-0000","📧 support@clinicsys.ph","🕒 Mon–Sat, 8AM–5PM"].map(c => (
               <div key={c} style={{ fontSize: "0.83rem", color: "#64748B", marginBottom: 10 }}>{c}</div>
             ))}
           </div>
@@ -814,7 +841,7 @@ export default function ClinicSysLanding() {
         <div style={{ borderTop: "1px solid #1E293B", paddingTop: 24, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: "0.78rem", color: "#334155" }}>
           <div>© 2026 ClinicSys General Clinic. All rights reserved.</div>
           <div style={{ display: "flex", gap: 24 }}>
-            {["Privacy Policy", "Terms & Conditions"].map(l => (
+            {["Privacy Policy","Terms & Conditions"].map(l => (
               <a key={l} href="#" style={{ color: "#334155", textDecoration: "none", transition: "color 0.15s" }}
                 onMouseEnter={e => e.target.style.color = "#fff"} onMouseLeave={e => e.target.style.color = "#334155"}>
                 {l}

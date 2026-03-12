@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\clinic_users;
-use App\Models\ClinicUser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 

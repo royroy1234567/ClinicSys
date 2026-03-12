@@ -396,24 +396,7 @@ export default function ActivityLogs() {
           <p className="text-xs text-gray-400">
             Showing audit logs · Admin access only · All times are in local timezone
           </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-2" /> Print Logs
-            </Button>
-            <Button variant="outline" size="sm">
-              <Download className="w-4 h-4 mr-2" /> Export PDF
-            </Button>
-            <Button variant="outline" size="sm">
-              <FileText className="w-4 h-4 mr-2" /> Export Excel
-            </Button>
-            <Button
-              variant="outline" size="sm"
-              className="text-red-500 border-red-200 hover:bg-red-50"
-              onClick={() => setShowClearConfirm(true)}
-            >
-              <Trash2 className="w-4 h-4 mr-2" /> Clear Logs
-            </Button>
-          </div>
+          
         </div>
 
       </div>

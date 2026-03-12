@@ -930,5 +930,4 @@ const AppointmentsPage = () => {
     </MainLayout>
   );
 };
-
 export default AppointmentsPage;

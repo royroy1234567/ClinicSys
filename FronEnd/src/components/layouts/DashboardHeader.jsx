@@ -1,21 +1,236 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Bell, Search, ChevronDown, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Bell, Search, ChevronDown, X, Menu,
+  PanelLeftClose, PanelLeftOpen,
+  UserCircle, Settings, LogOut, AlertTriangle,
+} from 'lucide-react';
 
 const DEMO_NOTIFICATIONS = [
-  { id:1, type:'appt',   title:'New appointment booked',         time:'2 min ago',  read:false },
-  { id:2, type:'followup',title:'Follow-up overdue: Maria Santos', time:'15 min ago', read:false },
-  { id:3, type:'patient', title:'New patient registered',         time:'1 hr ago',   read:false },
-  { id:4, type:'system',  title:'System backup completed',        time:'3 hrs ago',  read:true  },
+  { id: 1, type: 'appt',     title: 'New appointment booked',          time: '2 min ago',  read: false },
+  { id: 2, type: 'followup', title: 'Follow-up overdue: Maria Santos', time: '15 min ago', read: false },
+  { id: 3, type: 'patient',  title: 'New patient registered',          time: '1 hr ago',   read: false },
+  { id: 4, type: 'system',   title: 'System backup completed',         time: '3 hrs ago',  read: true  },
 ];
 
-const DashboardHeader = ({ title, subtitle }) => {
-  const { user } = useAuth();
-  const [showNotif, setShowNotif] = useState(false);
-  const [notifs, setNotifs] = useState(DEMO_NOTIFICATIONS);
+/* ══════════════════════════════════════════════════
+   LOGOUT CONFIRMATION MODAL
+══════════════════════════════════════════════════ */
+function LogoutModal({ onConfirm, onCancel }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="bg-gradient-to-r from-red-500 to-rose-600 p-6 relative overflow-hidden">
+          <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/10 pointer-events-none" />
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center">
+                <LogOut className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white">Sign Out</h3>
+                <p className="text-xs text-red-100 mt-0.5">End your current session</p>
+              </div>
+            </div>
+            <button
+              onClick={onCancel}
+              className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all"
+            >
+              <X className="w-4 h-4 text-white" />
+            </button>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl">
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 font-semibold">
+              Any unsaved changes will be lost. Make sure you've saved your work before signing out.
+            </p>
+          </div>
+          <p className="text-sm text-gray-500 text-center">
+            Are you sure you want to sign out of <span className="font-bold text-gray-800">ClinicSys</span>?
+          </p>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={onCancel}
+              className="flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-50 transition-all"
+            >
+              <X className="w-4 h-4" /> Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all shadow-sm shadow-red-200"
+            >
+              <LogOut className="w-4 h-4" /> Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   USER PILL DROPDOWN
+══════════════════════════════════════════════════ */
+function UserDropdown({ user, roleGradient, roleLabels, onLogoutClick }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const navigate = useNavigate();
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const settingsPath = {
+    manager: '/settings',
+    staff:   '/staff-settings',
+    doctor:  '/doctor-settings',
+    patient: '/patient-settings',
+  }[user?.role] || '/settings';
+
+  const profilePath = {
+    manager: '/profile',
+    staff:   '/profile',
+    doctor:  '/profile',
+    patient: '/profile',
+  }[user?.role] || '/profile';
+
+  const menuItems = [
+    {
+      icon: UserCircle,
+      label: 'Profile',
+      sub: 'View & edit your profile',
+      onClick: () => { navigate(profilePath); setOpen(false); },
+    },
+    {
+      icon: Settings,
+      label: 'Settings',
+      sub: 'Preferences & account',
+      onClick: () => { navigate(settingsPath); setOpen(false); },
+    },
+  ];
+
+  return (
+    <div className="relative" ref={ref}>
+      {/* Pill trigger */}
+      <button
+        onClick={() => setOpen(p => !p)}
+        className={`flex items-center gap-2 md:gap-2.5 bg-white border rounded-xl px-2.5 md:px-3 py-1.5 shadow-sm transition-all duration-150
+          ${open ? 'border-blue-400 ring-2 ring-blue-100' : 'border-blue-100 hover:border-blue-300'}`}
+      >
+        <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${roleGradient} shadow flex items-center justify-center text-white text-xs font-black flex-shrink-0`}>
+          {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+        </div>
+        <div className="hidden md:block text-left">
+          <p className="text-xs font-bold text-gray-800 leading-tight">{user?.name}</p>
+          <p className="text-[10px] text-blue-500 font-semibold leading-tight">{roleLabels[user?.role] || user?.role}</p>
+        </div>
+        <ChevronDown
+          className="w-3 h-3 text-gray-400 hidden md:block transition-transform duration-200"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+        />
+      </button>
+
+      {/* Dropdown panel */}
+      <div
+        className="absolute right-0 top-[calc(100%+8px)] w-64 z-50"
+        style={{
+          opacity: open ? 1 : 0,
+          transform: open ? 'translateY(0) scale(1)' : 'translateY(-8px) scale(0.97)',
+          pointerEvents: open ? 'auto' : 'none',
+          transition: 'opacity 180ms ease, transform 180ms cubic-bezier(0.4,0,0.2,1)',
+          transformOrigin: 'top right',
+        }}
+      >
+        <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+
+          {/* Header — user info */}
+          <div className="px-4 py-4 flex items-center gap-3 border-b border-gray-100"
+            style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)' }}
+          >
+            <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${roleGradient} shadow-lg flex items-center justify-center text-white text-base font-black flex-shrink-0`}>
+              {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-black text-gray-900 truncate">{user?.name}</p>
+              <p className="text-[11px] text-blue-500 font-semibold capitalize">{roleLabels[user?.role] || user?.role}</p>
+            </div>
+          </div>
+
+          {/* Menu items */}
+          <div className="py-1.5">
+            {menuItems.map(item => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  onClick={item.onClick}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors duration-100 group"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center flex-shrink-0 transition-colors duration-100">
+                    <Icon className="w-4 h-4 text-gray-500 group-hover:text-blue-600 transition-colors duration-100" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold text-gray-800">{item.label}</p>
+                    <p className="text-[11px] text-gray-400">{item.sub}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Divider + Logout */}
+          <div className="px-3 py-2 border-t border-gray-100">
+            <button
+              onClick={() => { setOpen(false); onLogoutClick(); }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 transition-colors duration-100 group"
+            >
+              <div className="w-8 h-8 rounded-xl bg-gray-100 group-hover:bg-red-100 flex items-center justify-center flex-shrink-0 transition-colors duration-100">
+                <LogOut className="w-4 h-4 text-gray-500 group-hover:text-red-500 transition-colors duration-100" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-bold text-gray-700 group-hover:text-red-600 transition-colors duration-100">Log out</p>
+                <p className="text-[11px] text-gray-400">End your session</p>
+              </div>
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   DASHBOARD HEADER
+══════════════════════════════════════════════════ */
+const DashboardHeader = ({ title, subtitle, collapsed, onToggle, onMenuClick }) => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [showNotif, setShowNotif]         = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [notifs, setNotifs]               = useState(DEMO_NOTIFICATIONS);
   const unread = notifs.filter(n => !n.read).length;
 
   const markAllRead = () => setNotifs(n => n.map(x => ({ ...x, read: true })));
+
+  const handleLogoutConfirm = () => {
+    setShowLogoutModal(false);
+    logout();
+    navigate('/login');
+  };
 
   const roleColors = {
     admin:   'from-violet-500 to-blue-600',
@@ -24,117 +239,133 @@ const DashboardHeader = ({ title, subtitle }) => {
     patient: 'from-sky-400 to-blue-500',
   };
   const roleGradient = roleColors[user?.role] || 'from-blue-500 to-blue-700';
-
   const roleLabels = {
-    admin: '👑 Administrator',
-    staff: '👩‍💻 Staff',
-    doctor: '👨‍⚕️ Doctor',
-    patient: '🧑 Patient',
+    admin: '👑 Administrator', staff: '👩‍💻 Staff',
+    doctor: '👨‍⚕️ Doctor', patient: '🧑 Patient',
   };
 
   return (
-    <header
-      className="relative flex-shrink-0 border-b border-blue-100/60"
-      style={{ background: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 60%, #dbeafe 100%)' }}
-      data-testid="dashboard-header"
-    >
-      {/* Subtle top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 via-blue-400 to-blue-600 opacity-60" />
+    <>
+      <header
+        className="relative flex-shrink-0 border-b border-blue-100/60"
+        style={{ background: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 60%, #dbeafe 100%)' }}
+        data-testid="dashboard-header"
+      >
+        {/* Top accent line */}
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-600 via-blue-400 to-blue-600 opacity-60" />
 
-      <div className="flex items-center justify-between px-6 py-4">
+        <div className="flex items-center justify-between px-4 md:px-6 py-4 gap-3">
 
-        {/* Left — Title */}
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-black text-gray-900 tracking-tight" data-testid="header-title">
-              {title}
-            </h1>
-          </div>
-          {subtitle && (
-            <p className="text-xs text-blue-500 font-semibold mt-0.5 tracking-wide" data-testid="header-subtitle">
-              {subtitle}
-            </p>
-          )}
-        </div>
-
-        {/* Right — Actions */}
-        <div className="flex items-center gap-3">
-
-          {/* Search */}
-          <div className="hidden md:flex items-center relative">
-            <Search className="absolute left-3 w-3.5 h-3.5 text-blue-400 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Quick search…"
-              data-testid="header-search"
-              className="pl-9 pr-4 py-2 w-52 text-sm rounded-xl border border-blue-100 bg-white/80 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent shadow-sm transition-all focus:w-64"
-            />
-          </div>
-
-          {/* Notifications */}
-          <div className="relative">
+          {/* Left */}
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Burger — mobile */}
             <button
-              onClick={() => setShowNotif(p => !p)}
-              data-testid="notifications-button"
-              className="relative w-9 h-9 rounded-xl bg-white border border-blue-100 shadow-sm flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+              onClick={onMenuClick}
+              className="md:hidden flex-shrink-0 w-9 h-9 rounded-xl bg-white border border-blue-100 shadow-sm flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+              aria-label="Open menu"
             >
-              <Bell className="w-4 h-4" />
-              {unread > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow">
-                  {unread}
-                </span>
-              )}
+              <Menu className="w-4 h-4" />
             </button>
 
-            {/* Dropdown */}
-            {showNotif && (
-              <div className="absolute right-0 top-11 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
-                  <p className="text-sm font-black text-gray-800">Notifications</p>
-                  <div className="flex items-center gap-2">
-                    {unread > 0 && (
-                      <button onClick={markAllRead} className="text-xs text-blue-500 font-semibold hover:text-blue-700">
-                        Mark all read
+            {/* Collapse toggle — desktop */}
+            <button
+              onClick={onToggle}
+              className="hidden md:flex flex-shrink-0 w-9 h-9 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 shadow-md shadow-blue-200 items-center justify-center text-white transition-all duration-150"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed
+                ? <PanelLeftOpen  className="w-[18px] h-[18px]" />
+                : <PanelLeftClose className="w-[18px] h-[18px]" />}
+            </button>
+
+            {/* Title */}
+            <div className="min-w-0">
+              <h1 className="text-base md:text-xl font-black text-gray-900 tracking-tight truncate" data-testid="header-title">
+                {title}
+              </h1>
+              {subtitle && (
+                <p className="text-xs text-blue-500 font-semibold mt-0.5 tracking-wide truncate" data-testid="header-subtitle">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Right */}
+          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+
+              
+
+            {/* Notifications */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotif(p => !p)}
+                data-testid="notifications-button"
+                className="relative w-9 h-9 rounded-xl bg-white border border-blue-100 shadow-sm flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+              >
+                <Bell className="w-4 h-4" />
+                {unread > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow">
+                    {unread}
+                  </span>
+                )}
+              </button>
+
+              {showNotif && (
+                <div className="absolute right-0 top-11 w-72 md:w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
+                    <p className="text-sm font-black text-gray-800">Notifications</p>
+                    <div className="flex items-center gap-2">
+                      {unread > 0 && (
+                        <button onClick={markAllRead} className="text-xs text-blue-500 font-semibold hover:text-blue-700">
+                          Mark all read
+                        </button>
+                      )}
+                      <button onClick={() => setShowNotif(false)} className="text-gray-400 hover:text-gray-600">
+                        <X className="w-4 h-4" />
                       </button>
-                    )}
-                    <button onClick={() => setShowNotif(false)} className="text-gray-400 hover:text-gray-600">
-                      <X className="w-4 h-4" />
-                    </button>
+                    </div>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
+                    {notifs.map(n => (
+                      <div
+                        key={n.id}
+                        className={`px-4 py-3 flex items-start gap-3 hover:bg-blue-50/50 transition-colors cursor-pointer ${!n.read ? 'bg-blue-50/30' : ''}`}
+                        onClick={() => setNotifs(ns => ns.map(x => x.id === n.id ? { ...x, read: true } : x))}
+                      >
+                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.read ? 'bg-blue-500' : 'bg-gray-200'}`} />
+                        <div>
+                          <p className={`text-xs font-semibold leading-snug ${!n.read ? 'text-gray-800' : 'text-gray-500'}`}>{n.title}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">{n.time}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
-                  {notifs.map(n => (
-                    <div key={n.id}
-                      className={`px-4 py-3 flex items-start gap-3 hover:bg-blue-50/50 transition-colors cursor-pointer
-                        ${!n.read ? 'bg-blue-50/30' : ''}`}
-                      onClick={() => setNotifs(ns => ns.map(x => x.id===n.id ? {...x,read:true} : x))}>
-                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.read ? 'bg-blue-500' : 'bg-gray-200'}`} />
-                      <div>
-                        <p className={`text-xs font-semibold leading-snug ${!n.read ? 'text-gray-800' : 'text-gray-500'}`}>{n.title}</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">{n.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* User pill */}
-          <div className="flex items-center gap-2.5 bg-white border border-blue-100 rounded-xl px-3 py-1.5 shadow-sm cursor-default">
-            <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${roleGradient} shadow flex items-center justify-center text-white text-xs font-black flex-shrink-0`}>
-              {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+              )}
             </div>
-            <div className="hidden md:block">
-              <p className="text-xs font-bold text-gray-800 leading-tight">{user?.name}</p>
-              <p className="text-[10px] text-blue-500 font-semibold leading-tight">{roleLabels[user?.role] || user?.role}</p>
-            </div>
-            <ChevronDown className="w-3 h-3 text-gray-400 hidden md:block" />
-          </div>
 
+            {/* User pill with dropdown */}
+            <UserDropdown
+              user={user}
+              roleGradient={roleGradient}
+              roleLabels={roleLabels}
+              onLogoutClick={() => setShowLogoutModal(true)}
+            />
+
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {showLogoutModal && createPortal(
+        <LogoutModal
+          onConfirm={handleLogoutConfirm}
+          onCancel={() => setShowLogoutModal(false)}
+        />,
+        document.body
+      )}
+    </>
   );
 };
 

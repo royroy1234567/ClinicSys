@@ -3,9 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class clinic_users extends Authenticatable
 {
+    use HasApiTokens, Notifiable;
+
     protected $primaryKey = 'user_id';
     public $timestamps    = false;
 

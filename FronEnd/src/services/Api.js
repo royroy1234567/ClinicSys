@@ -1,4 +1,4 @@
-// Mock API service for frontend-only demo
+// API service — doctors use real backend, others use mock data
 import {
   mockPatients,
   mockDoctors,
@@ -8,21 +8,38 @@ import {
   mockActivityLogs,
 } from './MockData';
 
-// Simulate API delay
+// Simulate API delay for mock data
 const delay = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms));
 
-// In-memory storage
-let patients = [...mockPatients];
-let doctors = [...mockDoctors];
-let appointments = [...mockAppointments];
+// In-memory storage for mock data
+let patients      = [...mockPatients];
+let appointments  = [...mockAppointments];
 let consultations = [...mockConsultations];
-let users = [...mockUsers];
-let activityLogs = [...mockActivityLogs];
+let users         = [...mockUsers];
+let activityLogs  = [...mockActivityLogs];
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
+
+const authHeaders = () => ({
+  'Content-Type': 'application/json',
+  'Accept':        'application/json',
+  'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+});
+
+const mapDoctor = (u) => ({
+  id:             u.user_id,
+  name:           `Dr. ${u.first_name} ${u.last_name}`,
+  specialization: u.specialization || 'General',
+  status:         u.status?.toLowerCase() === 'active' ? 'active' : 'inactive',
+  email:          u.email,
+  phone:          u.contact_number,
+});
+
 export const api = {
-  // Patients
+
+  // ── Patients (mock) ──────────────────────────────────────────
   patients: {
     getAll: async (search = '') => {
       await delay();
@@ -44,7 +61,7 @@ export const api = {
       const newPatient = {
         id: generateId(),
         ...data,
-        archived: false,
+        archived:   false,
         created_at: new Date().toISOString(),
       };
       patients.push(newPatient);
@@ -70,56 +87,58 @@ export const api = {
     },
   },
 
-  // Doctors
+  // ── Doctors (real API) ────────────────────────────────────────
   doctors: {
     getAll: async () => {
-      await delay();
-      return doctors;
+      const res = await fetch(`${API_BASE}/users?role=Doctor`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch doctors');
+      const data = await res.json();
+      return data.map(mapDoctor);
     },
+
     getById: async (id) => {
-      await delay();
-      return doctors.find(d => d.id === id);
+      const res = await fetch(`${API_BASE}/users/${id}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Doctor not found');
+      const u = await res.json();
+      return mapDoctor(u);
     },
+
     create: async (data) => {
-      await delay();
-      const newDoctor = {
-        id: generateId(),
-        ...data,
-        created_at: new Date().toISOString(),
-      };
-      doctors.push(newDoctor);
-      return newDoctor;
+      const res = await fetch(`${API_BASE}/users`, {
+        method:  'POST',
+        headers: authHeaders(),
+        body:    JSON.stringify({ ...data, role: 'Doctor' }),
+      });
+      if (!res.ok) throw new Error('Failed to create doctor');
+      const u = await res.json();
+      return mapDoctor(u);
     },
+
     update: async (id, data) => {
-      await delay();
-      const index = doctors.findIndex(d => d.id === id);
-      if (index !== -1) {
-        doctors[index] = { ...doctors[index], ...data };
-        return doctors[index];
-      }
-      throw new Error('Doctor not found');
+      const res = await fetch(`${API_BASE}/users/${id}`, {
+        method:  'PUT',
+        headers: authHeaders(),
+        body:    JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to update doctor');
+      const u = await res.json();
+      return mapDoctor(u);
     },
   },
 
-  // Appointments
+  // ── Appointments (mock) ───────────────────────────────────────
   appointments: {
     getAll: async (filters = {}) => {
       await delay();
       let result = [...appointments];
-      
-      if (filters.date) {
-        result = result.filter(a => a.date === filters.date);
-      }
-      if (filters.doctor_id) {
-        result = result.filter(a => a.doctor_id === filters.doctor_id);
-      }
-      if (filters.patient_id) {
-        result = result.filter(a => a.patient_id === filters.patient_id);
-      }
-      if (filters.status) {
-        result = result.filter(a => a.status === filters.status);
-      }
-      
+      if (filters.date)       result = result.filter(a => a.date      === filters.date);
+      if (filters.doctor_id)  result = result.filter(a => a.doctor_id === filters.doctor_id);
+      if (filters.patient_id) result = result.filter(a => a.patient_id=== filters.patient_id);
+      if (filters.status)     result = result.filter(a => a.status    === filters.status);
       return result;
     },
     create: async (data) => {
@@ -127,7 +146,7 @@ export const api = {
       const newAppointment = {
         id: generateId(),
         ...data,
-        status: 'scheduled',
+        status:     'scheduled',
         created_at: new Date().toISOString(),
       };
       appointments.push(newAppointment);
@@ -153,19 +172,13 @@ export const api = {
     },
   },
 
-  // Consultations
+  // ── Consultations (mock) ──────────────────────────────────────
   consultations: {
     getAll: async (filters = {}) => {
       await delay();
       let result = [...consultations];
-      
-      if (filters.patient_id) {
-        result = result.filter(c => c.patient_id === filters.patient_id);
-      }
-      if (filters.doctor_id) {
-        result = result.filter(c => c.doctor_id === filters.doctor_id);
-      }
-      
+      if (filters.patient_id) result = result.filter(c => c.patient_id === filters.patient_id);
+      if (filters.doctor_id)  result = result.filter(c => c.doctor_id  === filters.doctor_id);
       return result;
     },
     create: async (data) => {
@@ -180,7 +193,7 @@ export const api = {
     },
   },
 
-  // Users
+  // ── Users (mock) ──────────────────────────────────────────────
   users: {
     getAll: async () => {
       await delay();
@@ -188,11 +201,7 @@ export const api = {
     },
     create: async (data) => {
       await delay();
-      const newUser = {
-        id: generateId(),
-        ...data,
-        active: true,
-      };
+      const newUser = { id: generateId(), ...data, active: true };
       users.push(newUser);
       return newUser;
     },
@@ -207,16 +216,12 @@ export const api = {
     },
   },
 
-  // Reports
+  // ── Reports (mock) ────────────────────────────────────────────
   reports: {
     daily: async (date) => {
       await delay();
       const dayAppointments = appointments.filter(a => a.date === date);
-      return {
-        date,
-        total: dayAppointments.length,
-        appointments: dayAppointments,
-      };
+      return { date, total: dayAppointments.length, appointments: dayAppointments };
     },
     monthly: async (month) => {
       await delay();
@@ -225,24 +230,16 @@ export const api = {
         acc[apt.status] = (acc[apt.status] || 0) + 1;
         return acc;
       }, {});
-      return {
-        month,
-        total_appointments: monthAppointments.length,
-        by_status: byStatus,
-      };
+      return { month, total_appointments: monthAppointments.length, by_status: byStatus };
     },
     patientVisits: async (patientId) => {
       await delay();
       const visits = consultations.filter(c => c.patient_id === patientId);
-      return {
-        patient_id: patientId,
-        total_visits: visits.length,
-        visits,
-      };
+      return { patient_id: patientId, total_visits: visits.length, visits };
     },
   },
 
-  // Activity Logs
+  // ── Activity Logs (mock) ──────────────────────────────────────
   activity: {
     getAll: async () => {
       await delay();

@@ -1,43 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import {
   User, Lock, Bell, Shield, LogOut, Info,
   Check, X, Eye, EyeOff, Phone, Mail,
   Hash, Pencil, Save, AlertCircle, CheckCircle2,
   ChevronRight, Heart, AlertTriangle, MapPin,
-  Calendar, Clock, UserX, Cake, Users,
+  Calendar, Clock, UserX, Cake, Users, Loader2,
 } from 'lucide-react';
 
-/* ══════════════════════════════════════════════════
-   MOCK DATA
-══════════════════════════════════════════════════ */
-const MOCK_ACCOUNT = {
-  patientId:   'PT-00042',
-  createdAt:   'April 10, 2026',
-  lastLogin:   'May 12, 2026 – 8:45 AM',
-};
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
 
-const INITIAL_PROFILE = {
-  fullName:  'Maria Santos',
-  birthdate: '1991-07-22',
-  gender:    'Female',
-  contact:   '+63 917 222 0004',
-  email:     'm.santos@email.com',
-  address:   '12 Rizal Ave., Quezon City',
-};
-
-const INITIAL_MEDICAL = {
-  bloodType:          'O+',
-  allergies:          'Penicillin, Dust',
-  emergencyName:      'Juan Santos',
-  emergencyContact:   '+63 918 999 0001',
-};
+const authHeaders = () => ({
+  'Content-Type': 'application/json',
+  'Accept':        'application/json',
+  'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+});
 
 /* ══════════════════════════════════════════════════
    TOAST
 ══════════════════════════════════════════════════ */
 function Toast({ message, type = 'success', onDismiss }) {
-  React.useEffect(() => { const t = setTimeout(onDismiss, 3200); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(onDismiss, 3200); return () => clearTimeout(t); }, []);
   return (
     <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-sm font-semibold pointer-events-none
       ${type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}>
@@ -58,7 +43,6 @@ function Modal({ onClose, icon: Icon, iconBg, title, subtitle, children, width =
       onClick={onClose}>
       <div className={`bg-white rounded-3xl shadow-2xl w-full ${width} overflow-hidden`}
         onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className={`${iconBg} p-6 relative overflow-hidden`}>
           <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full bg-white/10 pointer-events-none" />
           <div className="absolute bottom-0 right-20 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
@@ -78,7 +62,6 @@ function Modal({ onClose, icon: Icon, iconBg, title, subtitle, children, width =
             </button>
           </div>
         </div>
-        {/* Body */}
         <div className="p-6 max-h-[68vh] overflow-y-auto space-y-4">
           {children}
         </div>
@@ -117,7 +100,7 @@ function Field({ icon: Icon, label, value, editable, onChange, type = 'text', no
             {['Male', 'Female', 'Prefer not to say'].map(g => <option key={g}>{g}</option>)}
           </select>
         ) : (
-          <input type={type} value={value} onChange={e => onChange(e.target.value)}
+          <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
             className="w-full px-3.5 py-2.5 text-sm border border-blue-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-800 transition-all" />
         )
       ) : (
@@ -128,12 +111,10 @@ function Field({ icon: Icon, label, value, editable, onChange, type = 'text', no
 }
 
 /* ══════════════════════════════════════════════════
-   MODALS
+   PROFILE MODAL
 ══════════════════════════════════════════════════ */
-
-/* — Profile — */
-function ProfileModal({ profile, onSave, onClose }) {
-  const [edit, setEdit] = useState(false);
+function ProfileModal({ profile, onSave, onClose, saving }) {
+  const [edit, setEdit]   = useState(false);
   const [draft, setDraft] = useState(profile);
   const f = k => v => setDraft(p => ({ ...p, [k]: v }));
 
@@ -142,23 +123,27 @@ function ProfileModal({ profile, onSave, onClose }) {
       title="Profile Information" subtitle="View and update your personal details." width="max-w-lg">
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <Field icon={User}     label="Full Name"      value={draft.fullName}  editable={edit} onChange={f('fullName')} />
+          <Field icon={User}  label="First Name"     value={draft.first_name}  editable={edit} onChange={f('first_name')} />
         </div>
-        <Field icon={Cake}     label="Birthdate"      value={draft.birthdate} editable={edit} onChange={f('birthdate')} type="date" />
-        <Field icon={Users}    label="Gender"         value={draft.gender}    editable={edit} onChange={f('gender')} as="select" />
-        <Field icon={Phone}    label="Contact Number" value={draft.contact}   editable={edit} onChange={f('contact')} />
-        <Field icon={Mail}     label="Email Address"  value={draft.email}     editable={edit} onChange={f('email')} type="email" />
-        <div className="col-span-2">
-          <Field icon={MapPin}   label="Address"        value={draft.address}   editable={edit} onChange={f('address')} />
-        </div>
+        <Field icon={User}    label="Middle Name"    value={draft.middle_name} editable={edit} onChange={f('middle_name')} />
+        <Field icon={User}    label="Last Name"      value={draft.last_name}   editable={edit} onChange={f('last_name')} />
+        <Field icon={Cake}    label="Birthdate"      value={draft.dob}         editable={edit} onChange={f('dob')} type="date" />
+        <Field icon={Users}   label="Gender"         value={draft.gender}      editable={edit} onChange={f('gender')} as="select" />
+        <Field icon={Phone}   label="Mobile"         value={draft.mobile}      editable={edit} onChange={f('mobile')} />
+        <Field icon={Mail}    label="Email Address"  value={draft.email}       editable={edit} onChange={f('email')} type="email" />
+        <Field icon={MapPin}  label="Street"         value={draft.street}      editable={edit} onChange={f('street')} />
+        <Field icon={MapPin}  label="City"           value={draft.city}        editable={edit} onChange={f('city')} />
+        <Field icon={MapPin}  label="Province"       value={draft.province}    editable={edit} onChange={f('province')} />
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
         {edit ? (
           <>
-            <button onClick={() => { onSave(draft); setEdit(false); }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm">
-              <Save className="w-3.5 h-3.5" /> Save Changes
+            <button onClick={() => onSave(draft).then(() => setEdit(false))}
+              disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-60">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Save Changes
             </button>
             <button onClick={() => { setDraft(profile); setEdit(false); }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-50 transition-all">
@@ -176,9 +161,11 @@ function ProfileModal({ profile, onSave, onClose }) {
   );
 }
 
-/* — Medical Info — */
-function MedicalModal({ medical, onSave, onClose }) {
-  const [edit, setEdit] = useState(false);
+/* ══════════════════════════════════════════════════
+   MEDICAL MODAL
+══════════════════════════════════════════════════ */
+function MedicalModal({ medical, onSave, onClose, saving }) {
+  const [edit, setEdit]   = useState(false);
   const [draft, setDraft] = useState(medical);
   const f = k => v => setDraft(p => ({ ...p, [k]: v }));
 
@@ -192,18 +179,25 @@ function MedicalModal({ medical, onSave, onClose }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field icon={Heart}  label="Blood Type"              value={draft.bloodType}        editable={edit} onChange={f('bloodType')} />
-        <Field icon={AlertCircle} label="Allergies"          value={draft.allergies}        editable={edit} onChange={f('allergies')} />
-        <Field icon={User}   label="Emergency Contact Name"  value={draft.emergencyName}    editable={edit} onChange={f('emergencyName')} />
-        <Field icon={Phone}  label="Emergency Contact No."   value={draft.emergencyContact} editable={edit} onChange={f('emergencyContact')} />
+        <Field icon={Heart}       label="Blood Type"             value={draft.blood_type}             editable={edit} onChange={f('blood_type')} />
+        <Field icon={AlertCircle} label="Allergies"              value={draft.allergies}              editable={edit} onChange={f('allergies')} />
+        <Field icon={Heart}       label="Conditions"             value={draft.conditions}             editable={edit} onChange={f('conditions')} />
+        <Field icon={Heart}       label="Medications"            value={draft.medications}            editable={edit} onChange={f('medications')} />
+        <Field icon={User}        label="Emergency Contact Name" value={draft.emergency_name}         editable={edit} onChange={f('emergency_name')} />
+        <Field icon={Phone}       label="Emergency Relationship" value={draft.emergency_relationship} editable={edit} onChange={f('emergency_relationship')} />
+        <div className="col-span-2">
+          <Field icon={Phone}     label="Emergency Contact No."  value={draft.emergency_contact}      editable={edit} onChange={f('emergency_contact')} />
+        </div>
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
         {edit ? (
           <>
-            <button onClick={() => { onSave(draft); setEdit(false); }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-sm">
-              <Save className="w-3.5 h-3.5" /> Save Changes
+            <button onClick={() => onSave(draft).then(() => setEdit(false))}
+              disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-60">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Save Changes
             </button>
             <button onClick={() => { setDraft(medical); setEdit(false); }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-50 transition-all">
@@ -221,19 +215,37 @@ function MedicalModal({ medical, onSave, onClose }) {
   );
 }
 
-/* — Password — */
+/* ══════════════════════════════════════════════════
+   PASSWORD MODAL
+══════════════════════════════════════════════════ */
 function PasswordModal({ onClose, onSuccess }) {
-  const [pwd, setPwd]   = useState({ current: '', newPwd: '', confirm: '' });
-  const [show, setShow] = useState({ current: false, newPwd: false, confirm: false });
+  const [pwd, setPwd]     = useState({ current: '', newPwd: '', confirm: '' });
+  const [show, setShow]   = useState({ current: false, newPwd: false, confirm: false });
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const f = k => v => setPwd(p => ({ ...p, [k]: v }));
 
-  const submit = () => {
+  const submit = async () => {
     setError('');
-    if (!pwd.current)               return setError('Enter your current password.');
-    if (pwd.newPwd.length < 8)      return setError('New password must be at least 8 characters.');
-    if (pwd.newPwd !== pwd.confirm)  return setError('Passwords do not match.');
-    onSuccess(); onClose();
+    if (!pwd.current)              return setError('Enter your current password.');
+    if (pwd.newPwd.length < 8)     return setError('New password must be at least 8 characters.');
+    if (pwd.newPwd !== pwd.confirm) return setError('Passwords do not match.');
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/patient/password`, {
+        method:  'PUT',
+        headers: authHeaders(),
+        body:    JSON.stringify({ current_password: pwd.current, password: pwd.newPwd, password_confirmation: pwd.confirm }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to update password.');
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -272,25 +284,28 @@ function PasswordModal({ onClose, onSuccess }) {
       </div>
 
       <div className="pt-1 border-t border-gray-100">
-        <button onClick={submit}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm">
-          <Lock className="w-3.5 h-3.5" /> Update Password
+        <button onClick={submit} disabled={saving}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-60">
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+          Update Password
         </button>
       </div>
     </Modal>
   );
 }
 
-/* — Notifications — */
+/* ══════════════════════════════════════════════════
+   NOTIFICATION MODAL
+══════════════════════════════════════════════════ */
 function NotifModal({ notif, onChange, onClose }) {
   return (
     <Modal onClose={onClose} icon={Bell} iconBg="bg-gradient-to-r from-amber-500 to-orange-500"
       title="Notification Preferences" subtitle="Control appointment alerts and reminders.">
       {[
-        { key: 'confirmation', label: 'Appointment Confirmation', desc: 'Get notified when your appointment is confirmed.'         },
-        { key: 'reminder',     label: 'Appointment Reminder',     desc: 'Receive reminders before your scheduled appointments.'    },
-        { key: 'updates',      label: 'Updates & Rescheduling',   desc: 'Alerts for any changes or rescheduling of appointments.'  },
-        { key: 'promo',        label: 'Promotional Notifications',desc: 'Clinic announcements, health tips, and promotions.'       },
+        { key: 'confirmation', label: 'Appointment Confirmation', desc: 'Get notified when your appointment is confirmed.'        },
+        { key: 'reminder',     label: 'Appointment Reminder',     desc: 'Receive reminders before your scheduled appointments.'   },
+        { key: 'updates',      label: 'Updates & Rescheduling',   desc: 'Alerts for any changes or rescheduling of appointments.' },
+        { key: 'promo',        label: 'Promotional Notifications',desc: 'Clinic announcements, health tips, and promotions.'      },
       ].map(({ key, label, desc }) => (
         <div key={key}
           className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:border-gray-200 transition-all">
@@ -310,15 +325,17 @@ function NotifModal({ notif, onChange, onClose }) {
   );
 }
 
-/* — Privacy — */
+/* ══════════════════════════════════════════════════
+   PRIVACY MODAL
+══════════════════════════════════════════════════ */
 function PrivacyModal({ privacy, onChange, onClose }) {
   return (
     <Modal onClose={onClose} icon={Shield} iconBg="bg-gradient-to-r from-teal-500 to-emerald-600"
       title="Privacy Settings" subtitle="Control how your health information is shared.">
       {[
-        { key: 'allowDoctorAccess', label: 'Allow Doctors to View Medical History', desc: 'Doctors assigned to you can access your full medical records for treatment.'    },
-        { key: 'shareForTreatment', label: 'Share Information for Treatment',       desc: 'Allow medical staff to use your data to provide better care.'                   },
-        { key: 'anonymousData',     label: 'Allow Anonymous Data Use',              desc: 'Help improve clinic services by sharing anonymized, non-identifiable data.'     },
+        { key: 'allowDoctorAccess', label: 'Allow Doctors to View Medical History', desc: 'Doctors assigned to you can access your full medical records for treatment.'   },
+        { key: 'shareForTreatment', label: 'Share Information for Treatment',       desc: 'Allow medical staff to use your data to provide better care.'                  },
+        { key: 'anonymousData',     label: 'Allow Anonymous Data Use',              desc: 'Help improve clinic services by sharing anonymized, non-identifiable data.'    },
       ].map(({ key, label, desc }) => (
         <div key={key}
           className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:border-gray-200 transition-all">
@@ -334,7 +351,6 @@ function PrivacyModal({ privacy, onChange, onClose }) {
           <Toggle checked={privacy[key]} onChange={v => onChange(key, v)} />
         </div>
       ))}
-
       <div className="flex items-start gap-2.5 p-3.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-700">
         <Shield className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" />
         <p>Your data is protected under our privacy policy. You can update these settings at any time.</p>
@@ -343,16 +359,21 @@ function PrivacyModal({ privacy, onChange, onClose }) {
   );
 }
 
-/* — Account Info — */
-function AccountModal({ profile, onClose }) {
+/* ══════════════════════════════════════════════════
+   ACCOUNT INFO MODAL
+══════════════════════════════════════════════════ */
+function AccountModal({ patient, onClose }) {
   return (
     <Modal onClose={onClose} icon={Info} iconBg="bg-gradient-to-r from-violet-600 to-purple-700"
       title="Account Information" subtitle="Your system account details.">
       {[
-        [Hash,     'Patient ID',           MOCK_ACCOUNT.patientId  ],
-        [Mail,     'Email Address',        profile.email           ],
-        [Calendar, 'Account Created',      MOCK_ACCOUNT.createdAt  ],
-        [Clock,    'Last Login',           MOCK_ACCOUNT.lastLogin  ],
+        [Hash,     'Patient ID',     `PT-${String(patient.id).padStart(5, '0')}`],
+        [Mail,     'Email Address',  patient.email                               ],
+        [Calendar, 'Date of Birth',  patient.dob                                 ],
+        [Clock,    'Account Since',  patient.created_at
+                                       ? new Date(patient.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+                                       : '—'
+        ],
       ].map(([Icon, label, value]) => (
         <div key={label} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
           <div className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
@@ -360,7 +381,7 @@ function AccountModal({ profile, onClose }) {
           </div>
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-            <p className="text-sm font-semibold text-gray-800 mt-0.5">{value}</p>
+            <p className="text-sm font-semibold text-gray-800 mt-0.5">{value || '—'}</p>
           </div>
         </div>
       ))}
@@ -368,7 +389,9 @@ function AccountModal({ profile, onClose }) {
   );
 }
 
-/* — Logout / Account Actions — */
+/* ══════════════════════════════════════════════════
+   ACCOUNT ACTIONS MODAL
+══════════════════════════════════════════════════ */
 function AccountActionsModal({ onClose, onLogout }) {
   const [confirmLogout,     setConfirmLogout]     = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
@@ -377,7 +400,6 @@ function AccountActionsModal({ onClose, onLogout }) {
     <Modal onClose={onClose} icon={LogOut} iconBg="bg-gradient-to-r from-red-500 to-rose-600"
       title="Account Actions" subtitle="Manage your session and account status.">
 
-      {/* Logout */}
       {!confirmLogout ? (
         <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-2xl">
           <div>
@@ -405,7 +427,6 @@ function AccountActionsModal({ onClose, onLogout }) {
         </div>
       )}
 
-      {/* Deactivate */}
       {!confirmDeactivate ? (
         <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-2xl">
           <div>
@@ -469,8 +490,12 @@ function SettingItem({ icon: Icon, iconBg, label, desc, badge, onClick, danger }
    MAIN PAGE
 ══════════════════════════════════════════════════ */
 export default function PatientSettingsPage() {
-  const [profile,  setProfile]  = useState(INITIAL_PROFILE);
-  const [medical,  setMedical]  = useState(INITIAL_MEDICAL);
+  const { user, logout }  = useAuth();
+  const navigate          = useNavigate();
+
+  const [patient,  setPatient]  = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
   const [notif,    setNotif]    = useState({ confirmation: true, reminder: true, updates: true, promo: false });
   const [privacy,  setPrivacy]  = useState({ allowDoctorAccess: true, shareForTreatment: true, anonymousData: false });
   const [modal,    setModal]    = useState(null);
@@ -479,10 +504,105 @@ export default function PatientSettingsPage() {
   const showToast = (msg, type = 'success') => setToast({ message: msg, type });
   const close     = () => setModal(null);
 
+  // ── Fetch patient on mount ──
+  useEffect(() => {
+    const fetchPatient = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/patient/profile`, {
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error('Failed to fetch profile');
+        const data = await res.json();
+        setPatient(data);
+      } catch (err) {
+        console.error(err);
+        // Fallback to AuthContext user data if API fails
+        if (user) {
+          setPatient({
+            id:         user.id,
+            first_name: user.name?.split(' ')[0] ?? '',
+            last_name:  user.name?.split(' ').slice(1).join(' ') ?? '',
+            email:      user.email,
+          });
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPatient();
+  }, []);
+
+  // ── Save profile ──
+  const saveProfile = async (draft) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/patient/profile`, {
+        method:  'PUT',
+        headers: authHeaders(),
+        body:    JSON.stringify(draft),
+      });
+      if (!res.ok) throw new Error('Failed to update profile');
+      const data = await res.json();
+      setPatient(data);
+      showToast('Profile updated successfully.');
+    } catch (err) {
+      showToast(err.message, 'error');
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Save medical ──
+  const saveMedical = async (draft) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/patient/profile`, {
+        method:  'PUT',
+        headers: authHeaders(),
+        body:    JSON.stringify(draft),
+      });
+      if (!res.ok) throw new Error('Failed to update medical info');
+      const data = await res.json();
+      setPatient(data);
+      showToast('Medical information updated.');
+    } catch (err) {
+      showToast(err.message, 'error');
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Logout ──
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method:  'POST',
+        headers: authHeaders(),
+      });
+    } catch { /* ignore */ }
+    logout();
+    navigate('/login');
+  };
+
+  if (loading) {
+    return (
+      <MainLayout title="Settings" subtitle="Manage your personal account and preferences.">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  if (!patient) return null;
+
+  const fullName      = `${patient.first_name ?? ''} ${patient.last_name ?? ''}`.trim();
+  const initials      = fullName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const patientId     = `PT-${String(patient.id).padStart(5, '0')}`;
   const activeNotif   = Object.values(notif).filter(Boolean).length;
   const activePrivacy = Object.values(privacy).filter(Boolean).length;
-
-  const initials = name => name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
     <MainLayout title="Settings" subtitle="Manage your personal account and preferences.">
@@ -494,11 +614,11 @@ export default function PatientSettingsPage() {
           <div className="absolute bottom-0 right-24 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
           <div className="relative flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-white/20 border-2 border-white/30 flex items-center justify-center text-lg font-black flex-shrink-0">
-              {initials(profile.fullName)}
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-black">{profile.fullName}</h2>
-              <p className="text-blue-200 text-sm">{MOCK_ACCOUNT.patientId} · {profile.email}</p>
+              <h2 className="text-xl font-black">{fullName}</h2>
+              <p className="text-blue-200 text-sm">{patientId} · {patient.email}</p>
             </div>
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 rounded-xl text-xs font-bold text-blue-100 flex-shrink-0">
               <User className="w-3.5 h-3.5" /> Patient
@@ -513,19 +633,18 @@ export default function PatientSettingsPage() {
         {/* ══ SETTINGS MENU ══ */}
         <div className="space-y-2">
 
-          {/* Personal */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pb-1">Personal</p>
 
           <SettingItem
             icon={User} iconBg="bg-blue-600"
             label="Profile Information"
-            desc={`${profile.fullName} · ${profile.contact}`}
+            desc={`${fullName} · ${patient.mobile ?? patient.email}`}
             onClick={() => setModal('profile')}
           />
           <SettingItem
             icon={Heart} iconBg="bg-rose-500"
             label="Medical Information"
-            desc={`Blood Type: ${medical.bloodType} · Emergency: ${medical.emergencyName}`}
+            desc={`Blood Type: ${patient.blood_type ?? '—'} · Emergency: ${patient.emergency_name ?? '—'}`}
             onClick={() => setModal('medical')}
           />
           <SettingItem
@@ -535,7 +654,6 @@ export default function PatientSettingsPage() {
             onClick={() => setModal('password')}
           />
 
-          {/* Preferences */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Preferences</p>
 
           <SettingItem
@@ -553,13 +671,12 @@ export default function PatientSettingsPage() {
             onClick={() => setModal('privacy')}
           />
 
-          {/* Account */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Account</p>
 
           <SettingItem
             icon={Info} iconBg="bg-violet-600"
             label="Account Information"
-            desc={`Patient ID: ${MOCK_ACCOUNT.patientId} · Last login: ${MOCK_ACCOUNT.lastLogin}`}
+            desc={`${patientId} · ${patient.email}`}
             onClick={() => setModal('account')}
           />
           <SettingItem
@@ -570,22 +687,23 @@ export default function PatientSettingsPage() {
             danger
           />
         </div>
-
       </div>
 
       {/* ══ MODALS ══ */}
       {modal === 'profile' && (
         <ProfileModal
-          profile={profile}
-          onSave={p => { setProfile(p); showToast('Profile updated successfully.'); close(); }}
+          profile={patient}
+          onSave={saveProfile}
           onClose={close}
+          saving={saving}
         />
       )}
       {modal === 'medical' && (
         <MedicalModal
-          medical={medical}
-          onSave={m => { setMedical(m); showToast('Medical information updated.'); close(); }}
+          medical={patient}
+          onSave={saveMedical}
           onClose={close}
+          saving={saving}
         />
       )}
       {modal === 'password' && (
@@ -609,12 +727,12 @@ export default function PatientSettingsPage() {
         />
       )}
       {modal === 'account' && (
-        <AccountModal profile={profile} onClose={close} />
+        <AccountModal patient={patient} onClose={close} />
       )}
       {modal === 'actions' && (
         <AccountActionsModal
           onClose={close}
-          onLogout={() => showToast('You have been signed out.')}
+          onLogout={handleLogout}
         />
       )}
 
