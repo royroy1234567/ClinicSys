@@ -21,57 +21,30 @@ const DEMO_NOTIFICATIONS = [
 function LogoutModal({ onConfirm, onCancel }) {
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
+        className="bg-white rounded-2xl border border-gray-200 w-full max-w-xs overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        <div className="bg-gradient-to-r from-red-500 to-rose-600 p-6 relative overflow-hidden">
-          <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/10 pointer-events-none" />
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center">
-                <LogOut className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-white">Sign Out</h3>
-                <p className="text-xs text-red-100 mt-0.5">End your current session</p>
-              </div>
-            </div>
-            <button
-              onClick={onCancel}
-              className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all"
-            >
-              <X className="w-4 h-4 text-white" />
-            </button>
-          </div>
+        <div className="px-5 py-4 border-b border-gray-100">
+          <p className="text-sm font-semibold text-gray-900">Sign out?</p>
+          <p className="text-xs text-gray-400 mt-0.5">You'll be returned to the login page.</p>
         </div>
-        <div className="p-6 space-y-4">
-          <div className="flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl">
-            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700 font-semibold">
-              Any unsaved changes will be lost. Make sure you've saved your work before signing out.
-            </p>
-          </div>
-          <p className="text-sm text-gray-500 text-center">
-            Are you sure you want to sign out of <span className="font-bold text-gray-800">ClinicSys</span>?
-          </p>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              onClick={onCancel}
-              className="flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-50 transition-all"
-            >
-              <X className="w-4 h-4" /> Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all shadow-sm shadow-red-200"
-            >
-              <LogOut className="w-4 h-4" /> Sign Out
-            </button>
-          </div>
+        <div className="px-5 py-3 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </div>

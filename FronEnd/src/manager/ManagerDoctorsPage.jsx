@@ -44,7 +44,7 @@ const StatusBadge = ({ status }) => {
 };
 
 const AvatarCircle = ({ name, size = 'md', status }) => {
-  const sizes    = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-base' };
+  const sizes     = { sm: 'w-8 h-8 text-xs', md: 'w-10 h-10 text-sm', lg: 'w-14 h-14 text-base' };
   const dotColors = { active: 'bg-green-400', inactive: 'bg-gray-400', on_leave: 'bg-yellow-400' };
   return (
     <div className="relative inline-flex flex-shrink-0">
@@ -87,12 +87,11 @@ function ViewProfileModal({ doctor, onClose }) {
     { icon: Hash,  label: 'License Number',  value: doctor.license_number },
   ].filter(row => row.value);
 
-  // Use doctor's own schedule if available, else fall back to mock
   const schedule = doctor.schedule?.length ? doctor.schedule : DEFAULT_SCHEDULE;
 
   const tabs = [
-    { key: 'info',     label: 'Information',  icon: Hash         },
-    { key: 'schedule', label: 'Schedule',     icon: CalendarDays },
+    { key: 'info',     label: 'Information', icon: Hash         },
+    { key: 'schedule', label: 'Schedule',    icon: CalendarDays },
   ];
 
   return (
@@ -107,12 +106,11 @@ function ViewProfileModal({ doctor, onClose }) {
           </button>
         </div>
 
-        {/* Avatar + name — always visible */}
+        {/* Avatar + name */}
         <div className="flex items-center gap-4 px-6 pt-5 pb-4">
           <AvatarCircle name={doctor.name} size="lg" status={doctor.status} />
           <div>
             <p className="text-lg font-bold text-gray-900">{doctor.name}</p>
-            <p className="text-sm text-blue-600 font-medium">{doctor.specialization}</p>
             <div className="mt-1.5"><StatusBadge status={doctor.status} /></div>
           </div>
         </div>
@@ -215,7 +213,6 @@ export default function DoctorsPage() {
     const q = search.toLowerCase();
     const matchSearch = !search
       || d.name?.toLowerCase().includes(q)
-      || d.specialization?.toLowerCase().includes(q)
       || d.email?.toLowerCase().includes(q);
     const matchStatus = statusFilter === 'all' || d.status === statusFilter;
     return matchSearch && matchStatus;
@@ -258,7 +255,7 @@ export default function DoctorsPage() {
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Search</label>
                   <Search className="absolute left-3 bottom-2.5 w-4 h-4 text-gray-400" />
                   <input value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="Name, specialization, email…"
+                    placeholder="Name or email…"
                     className={`${inputCls} pl-9`} />
                 </div>
 
@@ -296,7 +293,7 @@ export default function DoctorsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-y border-gray-100 bg-gray-50">
-                    {['Name', 'Specialization', 'License No.', 'Contact', 'Status', 'Action'].map(h => (
+                    {['Name', 'License No.', 'Contact', 'Status', 'Action'].map(h => (
                       <th key={h} className="text-left py-2.5 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -304,7 +301,7 @@ export default function DoctorsPage() {
                 <tbody className="divide-y divide-gray-50">
 
                   {loading && Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 6 }).map((_, j) => (
+                    <tr key={i}>{Array.from({ length: 5 }).map((_, j) => (
                       <td key={j} className="py-3 px-4">
                         <div className="h-4 bg-gray-100 rounded animate-pulse w-3/4" />
                       </td>
@@ -313,7 +310,7 @@ export default function DoctorsPage() {
 
                   {!loading && filtered.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-center py-14">
+                      <td colSpan={5} className="text-center py-14">
                         <Stethoscope className="w-10 h-10 mx-auto text-gray-200 mb-2" />
                         <p className="text-sm font-medium text-gray-400">No doctors found</p>
                         <p className="text-xs text-gray-300 mt-1">Try adjusting your search or filter</p>
@@ -333,12 +330,6 @@ export default function DoctorsPage() {
                             <p className="text-xs text-gray-400">{doctor.email}</p>
                           </div>
                         </div>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                          <Stethoscope className="w-3 h-3" /> {doctor.specialization}
-                        </span>
                       </td>
 
                       <td className="py-3 px-4 text-xs text-gray-500">{doctor.license_number || '—'}</td>

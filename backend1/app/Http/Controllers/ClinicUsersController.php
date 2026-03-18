@@ -31,35 +31,30 @@ class ClinicUsersController extends Controller
         return response()->json($query->orderBy('created_at', 'desc')->get());
     }
 
-public function store(Request $request)
-{
-    $request->validate([
-        'first_name'     => 'required|string|max:50',
-        'last_name'      => 'required|string|max:50',
-        'username'       => 'required|string|max:50|unique:clinic_users',
-        'email'          => 'required|email|max:100|unique:clinic_users',
-        'contact_number' => 'nullable|string|max:20',
-        'specialization' => 'nullable|string|max:100',
-        'license_number' => 'nullable|string|max:50',
-        'role'           => 'required|in:Manager,Admin,Doctor,Staff',
-        'status'         => 'nullable|in:Active,Inactive',
-        'password'       => 'required|string|min:8',
-    ]);
-
-
-        [$first, $last] = array_pad(explode(' ', $request->name, 2), 2, '');
+    public function store(Request $request)
+    {
+        $request->validate([
+            'first_name'     => 'required|string|max:50',
+            'last_name'      => 'required|string|max:50',
+            'username'       => 'required|string|max:50|unique:clinic_users',
+            'email'          => 'required|email|max:100|unique:clinic_users',
+            'contact_number' => 'nullable|string|max:20',
+            'license_number' => 'nullable|string|max:50',
+            'role'           => 'required|in:Manager,Admin,Doctor,Staff',
+            'status'         => 'nullable|in:Active,Inactive',
+            'password'       => 'required|string|min:8',
+        ]);
 
         $user = clinic_users::create([
-        'first_name'     => $request->first_name,
-        'last_name'      => $request->last_name,
-        'username'       => $request->username,
-        'email'          => $request->email,
-        'contact_number' => $request->contact_number,
-        'specialization' => $request->specialization,
-        'license_number' => $request->license_number,
-        'role'           => $request->role,
-        'status'         => $request->status ?? 'Active',
-        'password'       => Hash::make($request->password),
+            'first_name'     => $request->first_name,
+            'last_name'      => $request->last_name,
+            'username'       => $request->username,
+            'email'          => $request->email,
+            'contact_number' => $request->contact_number,
+            'license_number' => $request->license_number,
+            'role'           => $request->role,
+            'status'         => $request->status ?? 'Active',
+            'password'       => Hash::make($request->password),
         ]);
 
         return response()->json($this->formatUser($user), 201);
@@ -69,31 +64,27 @@ public function store(Request $request)
     {
         $user = clinic_users::findOrFail($id);
 
-      $request->validate([
-        'first_name'     => 'required|string|max:50',
-        'last_name'      => 'required|string|max:50',
-        'username'       => 'required|string|max:50|unique:clinic_users,username,'.$id.',user_id',
-        'email'          => 'required|email|max:100|unique:clinic_users,email,'.$id.',user_id',
-        'contact_number' => 'nullable|string|max:20',
-        'specialization' => 'nullable|string|max:100',
-        'license_number' => 'nullable|string|max:50',
-        'role'           => 'required|in:Manager,Admin,Doctor,Staff',
-        'status'         => 'nullable|in:Active,Inactive',
-    ]);
+        $request->validate([
+            'first_name'     => 'required|string|max:50',
+            'last_name'      => 'required|string|max:50',
+            'username'       => 'required|string|max:50|unique:clinic_users,username,'.$id.',user_id',
+            'email'          => 'required|email|max:100|unique:clinic_users,email,'.$id.',user_id',
+            'contact_number' => 'nullable|string|max:20',
+            'license_number' => 'nullable|string|max:50',
+            'role'           => 'required|in:Manager,Admin,Doctor,Staff',
+            'status'         => 'nullable|in:Active,Inactive',
+        ]);
 
-        [$first, $last] = array_pad(explode(' ', $request->name, 2), 2, '');
-
- $user->update([
-        'first_name'     => $request->first_name,
-        'last_name'      => $request->last_name,
-        'username'       => $request->username,
-        'email'          => $request->email,
-        'contact_number' => $request->contact_number,
-        'specialization' => $request->specialization,
-        'license_number' => $request->license_number,
-        'role'           => $request->role,
-        'status'         => $request->status ?? $user->status,
-    ]);
+        $user->update([
+            'first_name'     => $request->first_name,
+            'last_name'      => $request->last_name,
+            'username'       => $request->username,
+            'email'          => $request->email,
+            'contact_number' => $request->contact_number,
+            'license_number' => $request->license_number,
+            'role'           => $request->role,
+            'status'         => $request->status ?? $user->status,
+        ]);
 
         return response()->json($this->formatUser($user));
     }
@@ -114,18 +105,17 @@ public function store(Request $request)
 
     private function formatUser(clinic_users $user): array
     {
-return [
-        'user_id'        => $user->user_id,
-        'first_name'     => $user->first_name,
-        'last_name'      => $user->last_name,
-        'username'       => $user->username,
-        'email'          => $user->email,
-        'contact_number' => $user->contact_number,
-        'specialization' => $user->specialization,
-        'license_number' => $user->license_number,
-        'role'           => $user->role,
-        'status'         => $user->status,
-        'created_at'     => $user->created_at,
-    ];
+        return [
+            'user_id'        => $user->user_id,
+            'first_name'     => $user->first_name,
+            'last_name'      => $user->last_name,
+            'username'       => $user->username,
+            'email'          => $user->email,
+            'contact_number' => $user->contact_number,
+            'license_number' => $user->license_number,
+            'role'           => $user->role,
+            'status'         => $user->status,
+            'created_at'     => $user->created_at,
+        ];
     }
 }

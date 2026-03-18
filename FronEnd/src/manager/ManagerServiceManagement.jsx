@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import {
   Plus, Search, X, Check, RefreshCw,
-  Stethoscope, FlaskConical, Scissors, DollarSign,
+  Stethoscope,  Scissors, DollarSign,
   ChevronDown, Tag, Clock, LayoutGrid, List,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Loader2, AlertTriangle, Lock, Eye, EyeOff,
@@ -20,10 +20,64 @@ const API_BASE = 'http://backend1.test/api';
 const CATEGORIES = [
   { key: 'consultation', label: 'Consultation',       icon: Stethoscope,  bg: 'bg-blue-50',   color: 'text-blue-600',   border: 'border-blue-200'   },
   { key: 'procedure',    label: 'Medical Procedures', icon: Scissors,     bg: 'bg-teal-50',   color: 'text-teal-600',   border: 'border-teal-200'   },
-  { key: 'laboratory',   label: 'Laboratory Tests',   icon: FlaskConical, bg: 'bg-purple-50', color: 'text-purple-600', border: 'border-purple-200' },
   { key: 'fee',          label: 'Fees & Others',      icon: DollarSign,   bg: 'bg-orange-50', color: 'text-orange-600', border: 'border-orange-200' },
 ];
 
+
+const DURATION_PRESETS = [
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '1 hr',   value: 60 },
+  { label: 'Custom', value: null },
+];
+
+
+/*______________________DURATION PICKER___________________________*/ 
+const DurationPicker = ({ value, onChange }) => {
+  const numVal = Number(value) || 0;
+  const isPreset = DURATION_PRESETS.some(p => p.value === numVal && p.value !== null);
+  const [showCustom, setShowCustom] = React.useState(!isPreset && numVal > 0);
+
+  const handlePreset = (preset) => {
+    if (preset.value === null) {
+      setShowCustom(true);
+      onChange('');
+    } else {
+      setShowCustom(false);
+      onChange(String(preset.value));
+    }
+  };
+
+  const activePreset = showCustom ? null : DURATION_PRESETS.find(p => p.value === numVal);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2 flex-wrap">
+        {DURATION_PRESETS.map(p => {
+          const isActive = p.value === null ? showCustom : (!showCustom && activePreset?.value === p.value);
+          return (
+            <button key={p.label} type="button" onClick={() => handlePreset(p)}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all
+                ${isActive
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-200'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-blue-300 hover:text-blue-600'}`}>
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      {showCustom && (
+        <input
+          type="number" min="0" value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Enter minutes"
+          autoFocus
+          className={inputCls}
+        />
+      )}
+    </div>
+  );
+};
 /* ══════════════ HELPERS ══════════════ */
 const fmtPrice = (p) => `₱${Number(p).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`;
 
@@ -660,10 +714,9 @@ function AddServiceModal({ onClose, onSave, saving }) {
           </div>
 
           {form.category !== 'fee' && (
-            <FieldRow label="Estimated Duration (minutes)" hint="Set to 0 if not applicable">
-              <input type="number" min="0" value={form.duration}
-                onChange={e => set('duration', e.target.value)} placeholder="30" className={inputCls} />
-            </FieldRow>
+            <FieldRow label="Estimated Duration" hint="Set to 0 / leave blank if not applicable">
+  <DurationPicker value={form.duration} onChange={v => set('duration', v)} />
+</FieldRow>
           )}
 
           <FieldRow label="Status">
@@ -713,19 +766,17 @@ export default function ServiceManagementPage() {
 
   const { toast } = useToast();
 
-  const fetchServices = useCallback(async () => {
-    setLoading(true);
-    setApiError(null);
-    try {
-      const res = await fetch(`${API_BASE}/servics`);
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      const data = await res.json();
-      setServices(data.map(normalizeService));
-    } catch (err) {
-      setApiError(err.message);
-    } finally { setLoading(false); }
-  }, []);
-
+const fetchServices = useCallback(async () => {
+  setLoading(true);
+  setApiError(null);
+  try {
+    const { ok, status, data } = await apiFetch('/servics'); // ← dito ang pagbabago
+    if (!ok) throw new Error(`Server error: ${status}`);
+    setServices(data.map(normalizeService));
+  } catch (err) {
+    setApiError(err.message);
+  } finally { setLoading(false); }
+}, []);
   useEffect(() => { fetchServices(); }, [fetchServices]);
 
   /* ── KPIs ── */
@@ -762,26 +813,24 @@ export default function ServiceManagementPage() {
 
   /* ── Add ── */
   const handleAddSave = async (form) => {
-    setSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/servics`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(toPayload(form)),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const msg  = body.errors ? Object.values(body.errors).flat().join(' ') : body.message ?? 'Error saving.';
-        throw new Error(msg);
-      }
-      const saved = normalizeService(await res.json());
-      setServices(prev => [...prev, saved]);
-      toast({ title: 'Service added', description: `${saved.name} has been created.` });
-      setModal(null);
-    } catch (err) {
-      toast({ title: 'Save failed', description: err.message, variant: 'destructive' });
-    } finally { setSaving(false); }
-  };
+  setSaving(true);
+  try {
+    const { ok, data } = await apiFetch('/servics', {  // ← dito
+      method: 'POST',
+      body: JSON.stringify(toPayload(form)),
+    });
+    if (!ok) {
+      const msg = data.errors ? Object.values(data.errors).flat().join(' ') : data.message ?? 'Error saving.';
+      throw new Error(msg);
+    }
+    const saved = normalizeService(data);
+    setServices(prev => [...prev, saved]);
+    toast({ title: 'Service added', description: `${saved.name} has been created.` });
+    setModal(null);
+  } catch (err) {
+    toast({ title: 'Save failed', description: err.message, variant: 'destructive' });
+  } finally { setSaving(false); }
+};
 
   /* ── Manage callbacks ── */
   const handleManageSaved    = (saved)         => { setServices(prev => prev.map(x => x.id === saved.id ? saved : x)); setModal(null); };

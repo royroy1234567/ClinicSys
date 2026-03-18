@@ -78,6 +78,38 @@ class PatientsController extends Controller
         return response()->json(['message' => 'Password updated successfully.'], 200);
     }
 
+    // ── PATCH /api/patients/{id}/toggle-status ────────────────
+    public function toggleStatus(Request $request, $id)
+    {
+        $patient = patients::findOrFail($id);
+
+        $patient->status = $patient->status === 'active' ? 'inactive' : 'active';
+        $patient->save();
+
+        return response()->json([
+            'message' => 'Status updated successfully.',
+            'status'  => $patient->status,
+        ]);
+    }
+
+    // ── POST /api/patients/verify-password ───────────────────
+    // Used by the admin UI to gate the View modal behind a password check.
+    // Expects { password: string } and checks against the authenticated admin/staff user.
+    public function verifyAdminPassword(Request $request)
+    {
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        $admin = $request->user(); // the currently logged-in admin / staff
+
+        if (!Hash::check($request->password, $admin->password)) {
+            return response()->json(['verified' => false, 'message' => 'Incorrect password.'], 422);
+        }
+
+        return response()->json(['verified' => true]);
+    }
+
     public function register(Request $request)
     {
         $request->validate([
@@ -130,6 +162,7 @@ class PatientsController extends Controller
             'emergency_contact'      => $request->emergency_contact,
             'agree_privacy'          => $request->agree_privacy,
             'agree_storage'          => $request->agree_storage,
+            'status'                 => 'active',
         ]);
 
         $token = $patient->createToken('auth_token')->plainTextToken;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -6,8 +6,36 @@ import {
   CalendarIcon, Plus, Clock, User, Stethoscope, Search, RefreshCw,
   Eye, X, Check, ChevronDown, ChevronLeft, ChevronRight,
   CheckCircle2, XCircle, UserX, Printer, Download,
-  PlayCircle, LogIn, Hash, Bell, ClipboardList,
+  PlayCircle, LogIn, Hash, Bell, ClipboardList, AlertCircle,
 } from 'lucide-react';
+
+/* ═══════════════════════════════════════
+   API CONFIG
+   ─ Set VITE_API_BASE_URL in your .env, e.g.:
+     VITE_API_BASE_URL=http://localhost:8000
+   ─ The token is read from localStorage key "sanctum_token".
+     Change the key to match wherever your app stores it.
+═══════════════════════════════════════ */
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
+const TOKEN_KEY  = 'auth_token';
+
+const apiFetch = async (path, options = {}) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const res   = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Accept:         'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+};
 
 /* ═══════════════════════════════════════
    CONSTANTS & HELPERS
@@ -46,20 +74,6 @@ const calcEnd = (start, dur) => {
 };
 
 const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
-
-/* ── Demo data ── */
-const INIT_APTS = [
-  { id:'APT-001', patient:'John Doe',       doctor:'Dr. Sarah Smith',  date:TODAY, start_time:'08:00', end_time:'08:30', type:'General Consultation',    status:'completed',  queue:1,    reason:'Regular checkup',     notes:'' },
-  { id:'APT-002', patient:'Jane Smith',     doctor:'Dr. Michael Chen', date:TODAY, start_time:'08:30', end_time:'09:00', type:'Follow-up',               status:'completed',  queue:2,    reason:'Follow-up visit',     notes:'' },
-  { id:'APT-003', patient:'Robert Johnson', doctor:'Dr. James Lim',    date:TODAY, start_time:'09:00', end_time:'09:30', type:'General Consultation',    status:'ongoing',    queue:3,    reason:'Blood pressure',      notes:'Bring records' },
-  { id:'APT-004', patient:'Maria Santos',   doctor:'Dr. Sarah Smith',  date:TODAY, start_time:'09:30', end_time:'10:00', type:'Follow-up',               status:'checked_in', queue:4,    reason:'Fever & cough',       notes:'' },
-  { id:'APT-005', patient:'Carlos Reyes',   doctor:'Dr. Reyna Torres', date:TODAY, start_time:'10:00', end_time:'10:30', type:'Executive Check-up',      status:'scheduled',  queue:null, reason:'Annual physical',     notes:'' },
-  { id:'APT-006', patient:'Ana Cruz',       doctor:'Dr. Ana Reyes',    date:TODAY, start_time:'10:30', end_time:'11:00', type:'Specialist Consultation', status:'cancelled',  queue:null, reason:'Skin consult',        notes:'' },
-  { id:'APT-007', patient:'Ben Torres',     doctor:'Dr. Michael Chen', date:TODAY, start_time:'11:00', end_time:'11:30', type:'General Consultation',    status:'scheduled',  queue:null, reason:'Diabetes follow-up',  notes:'' },
-  { id:'APT-008', patient:'Carla Mendoza',  doctor:'Dr. James Lim',    date:TODAY, start_time:'13:00', end_time:'13:30', type:'General Consultation',    status:'no_show',    queue:null, reason:'Asthma checkup',      notes:'' },
-  { id:'APT-009', patient:'David Lim',      doctor:'Dr. Sarah Smith',  date:TODAY, start_time:'13:30', end_time:'14:00', type:'Follow-up',               status:'scheduled',  queue:null, reason:'Post-op visit',       notes:'' },
-  { id:'APT-010', patient:'Elena Ramos',    doctor:'Dr. Reyna Torres', date:TODAY, start_time:'14:00', end_time:'14:30', type:'Specialist Consultation', status:'scheduled',  queue:null, reason:'Hypertension',        notes:'' },
-];
 
 /* ══════════════════════════════════════
    SHARED COMPONENTS
@@ -148,6 +162,39 @@ const Pagination = ({ page, totalPages, total, onPage }) => {
 };
 
 /* ══════════════════════════════════════
+   ERROR BANNER
+══════════════════════════════════════ */
+const ErrorBanner = ({ message, onRetry }) => (
+  <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+    <span className="flex-1">{message}</span>
+    {onRetry && (
+      <button onClick={onRetry}
+        className="text-xs font-semibold underline underline-offset-2 hover:text-red-900">
+        Retry
+      </button>
+    )}
+  </div>
+);
+
+/* ══════════════════════════════════════
+   SKELETON ROW
+══════════════════════════════════════ */
+const SkeletonRows = () => (
+  <>
+    {Array.from({ length: 5 }).map((_, i) => (
+      <tr key={i} className="border-b border-gray-50">
+        {Array.from({ length: 9 }).map((_, j) => (
+          <td key={j} className="py-3 px-3">
+            <div className="h-3 bg-gray-100 rounded animate-pulse" style={{ width: `${60 + Math.random()*30}%` }} />
+          </td>
+        ))}
+      </tr>
+    ))}
+  </>
+);
+
+/* ══════════════════════════════════════
    BOOK APPOINTMENT MODAL
 ══════════════════════════════════════ */
 const EMPTY_FORM = { patient:'', doctor:'', date:TODAY, start_time:'', duration:'30', type:'General Consultation', reason:'', notes:'' };
@@ -191,8 +238,6 @@ function BookModal({ allApts, onClose, onSave, saving }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
-
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Book New Appointment</h2>
@@ -201,7 +246,6 @@ function BookModal({ allApts, onClose, onSave, saving }) {
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
-        {/* Body */}
         <div className="p-6 space-y-4">
           <FieldRow label="Patient" required>
             <SelectBox value={form.patient} onChange={v=>set('patient',v)} placeholder="Select patient…" options={PATIENTS.map(p=>({value:p,label:p}))} />
@@ -256,7 +300,6 @@ function BookModal({ allApts, onClose, onSave, saving }) {
           </FieldRow>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
           <button onClick={()=>{setForm({...EMPTY_FORM});setErrors({});}}
             className="text-sm text-gray-400 hover:text-gray-600 font-medium flex items-center gap-1.5">
@@ -277,13 +320,12 @@ function BookModal({ allApts, onClose, onSave, saving }) {
 }
 
 /* ══════════════════════════════════════
-   VIEW MODAL  (read-only)
+   VIEW MODAL
 ══════════════════════════════════════ */
 function ViewModal({ apt, onClose, onCheckin }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e=>e.stopPropagation()}>
-
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Appointment Details</h2>
@@ -305,11 +347,11 @@ function ViewModal({ apt, onClose, onCheckin }) {
           <div className="bg-gray-50 rounded-xl p-4 space-y-3">
             {[
               { Icon:User,         label:'Patient', value:apt.patient },
-              { Icon:Stethoscope,                    label:'Doctor',  value:apt.doctor  },
-              { Icon:CalendarIcon,                   label:'Date',    value:fmtDate(apt.date) },
-              { Icon:Clock,                          label:'Time',    value:`${fmtTime(apt.start_time)} – ${fmtTime(apt.end_time)}` },
-              { Icon:ClipboardList,                  label:'Type',    value:apt.type    },
-              { Icon:Bell,                           label:'Reason',  value:apt.reason  },
+              { Icon:Stethoscope,  label:'Doctor',  value:apt.doctor  },
+              { Icon:CalendarIcon, label:'Date',    value:fmtDate(apt.date) },
+              { Icon:Clock,        label:'Time',    value:`${fmtTime(apt.start_time)} – ${fmtTime(apt.end_time)}` },
+              { Icon:ClipboardList,label:'Type',    value:apt.type    },
+              { Icon:Bell,         label:'Reason',  value:apt.reason  },
             ].map(r=>(
               <div key={r.label} className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -373,10 +415,31 @@ function CheckinModal({ apt, nextQueue, onClose, onConfirm }) {
 }
 
 /* ══════════════════════════════════════
+   NORMALISE API RESPONSE → internal shape
+   Adjust field names here to match your
+   actual Laravel JSON response keys.
+══════════════════════════════════════ */
+const normalise = (raw) => ({
+  id:         raw.appointment_id   ?? raw.id,
+  patient:    raw.patient_name     ?? raw.patient ?? '—',
+  doctor:     raw.doctor_name      ?? raw.doctor  ?? '—',
+  date:       raw.appointment_date ?? raw.date,
+  start_time: (raw.appointment_time ?? raw.start_time ?? '').substring(0, 5),
+  end_time:   (raw.end_time         ?? '').substring(0, 5),
+  type:       raw.service_name     ?? raw.type    ?? '—',
+  status:     raw.status           ?? 'scheduled',
+  queue:      raw.queue_number     ?? raw.queue   ?? null,
+  reason:     raw.reason           ?? '',
+  notes:      raw.notes            ?? '',
+});
+
+/* ══════════════════════════════════════
    MAIN PAGE
 ══════════════════════════════════════ */
 const StaffAppointments = () => {
-  const [apts,       setApts]       = useState(INIT_APTS);
+  const [apts,       setApts]       = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
   const [filterDate, setFilterDate] = useState(TODAY);
   const [filterDoc,  setFilterDoc]  = useState('');
   const [filterStat, setFilterStat] = useState('');
@@ -385,45 +448,113 @@ const StaffAppointments = () => {
   const [modal,      setModal]      = useState(null);
   const [saving,     setSaving]     = useState(false);
 
-  const todayApts = apts.filter(a=>a.date===TODAY);
+  /* ── Fetch from API ── */
+  const fetchApts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      /*
+       * Staff endpoint — adjust the path to match your routes, e.g.:
+       *   /api/staff/appointments
+       *   /api/appointments?role=staff
+       *
+       * Pass date/doctor filters as query params if your API supports it.
+       * Here we fetch everything and filter client-side (same as original).
+       */
+      const data = await apiFetch('/appointments');
+
+      // data may be an array or { data: [...] } depending on your response shape
+      const list = Array.isArray(data) ? data : (data.data ?? []);
+      setApts(list.map(normalise));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchApts(); }, [fetchApts]);
+
+  /* ── Derived KPIs ── */
+  const todayApts = apts.filter(a => a.date === TODAY);
+  const uniqueDoctors = [...new Set(apts.map(a => a.doctor))];
   const kpis = {
     total:     todayApts.length,
-    pending:   todayApts.filter(a=>['scheduled','checked_in'].includes(a.status)).length,
-    perDoctor: Math.max(...DOCTORS.map(d=>todayApts.filter(a=>a.doctor===d).length)),
-    cancelled: todayApts.filter(a=>['cancelled','no_show'].includes(a.status)).length,
+    pending:   todayApts.filter(a => ['scheduled','checked_in'].includes(a.status)).length,
+    perDoctor: uniqueDoctors.length
+      ? Math.max(...uniqueDoctors.map(d => todayApts.filter(a => a.doctor === d).length))
+      : 0,
+    cancelled: todayApts.filter(a => ['cancelled','no_show'].includes(a.status)).length,
   };
 
-  const nextQueue = Math.max(0, ...apts.filter(a=>a.queue).map(a=>a.queue)) + 1;
+  const nextQueue = Math.max(0, ...apts.filter(a => a.queue).map(a => a.queue)) + 1;
 
-  const filtered = useMemo(()=>apts.filter(a=>{
-    if (filterDate && a.date!==filterDate) return false;
-    if (filterDoc  && a.doctor!==filterDoc) return false;
-    if (filterStat && a.status!==filterStat) return false;
+  /* ── Client-side filters ── */
+  const filtered = useMemo(() => apts.filter(a => {
+    if (filterDate && a.date !== filterDate)   return false;
+    if (filterDoc  && a.doctor !== filterDoc)  return false;
+    if (filterStat && a.status !== filterStat) return false;
     if (filterQ) {
       const q = filterQ.toLowerCase();
-      return a.patient.toLowerCase().includes(q) || a.doctor.toLowerCase().includes(q) || a.id.toLowerCase().includes(q);
+      return (
+        a.patient.toLowerCase().includes(q) ||
+        a.doctor.toLowerCase().includes(q)  ||
+        String(a.id).toLowerCase().includes(q)
+      );
     }
     return true;
-  }),[apts,filterDate,filterDoc,filterStat,filterQ]);
+  }), [apts, filterDate, filterDoc, filterStat, filterQ]);
 
-  const totalPages = Math.ceil(filtered.length/PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated  = filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
 
-  const handleCheckin = (id) => {
-    setApts(prev=>prev.map(a=>a.id===id ? {...a, status:'checked_in', queue:nextQueue} : a));
+  /* ── Actions (optimistic updates; re-fetch on failure) ── */
+  const handleCheckin = async (id) => {
+    // Optimistic
+    setApts(prev => prev.map(a => a.id === id ? { ...a, status:'checked_in', queue:nextQueue } : a));
+    try {
+      // Adjust endpoint to your check-in route
+      await apiFetch(`/appointments/${id}/checkin`, { method: 'POST' });
+    } catch {
+      // Rollback on failure
+      fetchApts();
+    }
   };
 
-  const handleSave = (form) => {
+  const handleSave = async (form) => {
     setSaving(true);
-    setTimeout(()=>{
-      const newId = `APT-${String(apts.length+1).padStart(3,'0')}`;
-      setApts(prev=>[...prev, { id:newId, ...form, status:'scheduled', queue:null }]);
-      setSaving(false);
+    try {
+      const created = await apiFetch('/appointments', {
+        method: 'POST',
+        body: JSON.stringify({
+          // Map internal form fields → API fields your controller expects
+          doctor_id:        form.doctor,     // ⚠ replace with actual doctor ID if you have it
+          service_id:       null,
+          appointment_date: form.date,
+          appointment_time: form.start_time,
+          reason:           form.reason,
+          notes:            form.notes,
+        }),
+      });
+      // Refresh list to get the server-assigned ID & status
+      await fetchApts();
       setModal(null);
-    }, 600);
+    } catch (err) {
+      alert(`Failed to save: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const resetFilters = () => { setFilterDate(TODAY); setFilterDoc(''); setFilterStat(''); setFilterQ(''); setPage(1); };
+  /* ── Derive doctor list from fetched data (falls back to DOCTORS constant) ── */
+  const doctorOptions = useMemo(() => {
+    const fromData = [...new Set(apts.map(a => a.doctor))].filter(Boolean);
+    return fromData.length ? fromData : DOCTORS;
+  }, [apts]);
+
+  const resetFilters = () => {
+    setFilterDate(TODAY); setFilterDoc(''); setFilterStat(''); setFilterQ(''); setPage(1);
+  };
 
   return (
     <MainLayout title="Appointment Management" subtitle="Manage and schedule patient appointments.">
@@ -437,17 +568,27 @@ const StaffAppointments = () => {
               {new Date().toLocaleDateString('en-PH',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
             </span>
           </div>
-          <Button onClick={()=>setModal({type:'add'})} className="bg-blue-600 hover:bg-blue-700 text-white">
-            <Plus className="w-4 h-4 mr-2" /> Book Appointment
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={fetchApts} disabled={loading}
+              className="h-9 text-xs gap-1.5">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Loading…' : 'Refresh'}
+            </Button>
+            <Button onClick={()=>setModal({type:'add'})} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <Plus className="w-4 h-4 mr-2" /> Book Appointment
+            </Button>
+          </div>
         </div>
+
+        {/* ══ ERROR BANNER ══ */}
+        {error && <ErrorBanner message={error} onRetry={fetchApts} />}
 
         {/* ══ KPI CARDS ══ */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Total Today"         value={kpis.total}     icon={CalendarIcon} iconBg="bg-blue-50"   iconColor="text-blue-600" />
-          <KPICard label="Pending / Waiting"   value={kpis.pending}   sub="scheduled + checked-in" icon={Clock} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
-          <KPICard label="Max Appts / Doctor"  value={kpis.perDoctor} sub={`across ${DOCTORS.length} doctors`} icon={Stethoscope} iconBg="bg-purple-50" iconColor="text-purple-600" />
-          <KPICard label="Cancelled / No-show" value={kpis.cancelled} icon={XCircle}      iconBg="bg-red-50"    iconColor="text-red-500" />
+          <KPICard label="Total Today"         value={loading ? '…' : kpis.total}     icon={CalendarIcon} iconBg="bg-blue-50"   iconColor="text-blue-600" />
+          <KPICard label="Pending / Waiting"   value={loading ? '…' : kpis.pending}   sub="scheduled + checked-in" icon={Clock} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
+          <KPICard label="Max Appts / Doctor"  value={loading ? '…' : kpis.perDoctor} sub={`across ${doctorOptions.length} doctors`} icon={Stethoscope} iconBg="bg-purple-50" iconColor="text-purple-600" />
+          <KPICard label="Cancelled / No-show" value={loading ? '…' : kpis.cancelled} icon={XCircle} iconBg="bg-red-50" iconColor="text-red-500" />
         </div>
 
         {/* ══ SEARCH & FILTERS ══ */}
@@ -467,7 +608,7 @@ const StaffAppointments = () => {
               <div className="min-w-[160px]">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Doctor</label>
                 <SelectBox value={filterDoc} onChange={v=>{setFilterDoc(v);setPage(1);}}
-                  placeholder="All Doctors" options={DOCTORS.map(d=>({value:d,label:d}))} />
+                  placeholder="All Doctors" options={doctorOptions.map(d=>({value:d,label:d}))} />
               </div>
               <div className="min-w-[140px]">
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Status</label>
@@ -487,9 +628,11 @@ const StaffAppointments = () => {
             <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <ClipboardList className="w-5 h-5 text-blue-600" /> Appointments
-                <span className="text-xs font-normal text-gray-400 ml-1">
-                  {filtered.length} record{filtered.length!==1?'s':''}
-                </span>
+                {!loading && (
+                  <span className="text-xs font-normal text-gray-400 ml-1">
+                    {filtered.length} record{filtered.length!==1?'s':''}
+                  </span>
+                )}
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={()=>window.print()}>
@@ -513,19 +656,26 @@ const StaffAppointments = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {paginated.length===0 && (
+                  {loading && <SkeletonRows />}
+
+                  {!loading && paginated.length===0 && (
                     <tr>
                       <td colSpan={9} className="text-center py-14">
                         <CalendarIcon className="w-10 h-10 mx-auto text-gray-200 mb-2" />
-                        <p className="text-sm text-gray-400">No appointments found</p>
-                        <Button className="mt-4 bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
-                          onClick={()=>setModal({type:'add'})}>
-                          <Plus className="w-3.5 h-3.5 mr-1.5" /> Book Appointment
-                        </Button>
+                        <p className="text-sm text-gray-400">
+                          {error ? 'Could not load appointments.' : 'No appointments found.'}
+                        </p>
+                        {!error && (
+                          <Button className="mt-4 bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
+                            onClick={()=>setModal({type:'add'})}>
+                            <Plus className="w-3.5 h-3.5 mr-1.5" /> Book Appointment
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   )}
-                  {paginated.map(apt=>(
+
+                  {!loading && paginated.map(apt=>(
                     <tr key={apt.id} className="hover:bg-gray-50 transition-colors">
                       <td className="py-2.5 px-3 font-mono text-xs font-bold text-gray-400 whitespace-nowrap">{apt.id}</td>
                       <td className="py-2.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fmtDate(apt.date)}</td>
@@ -544,12 +694,10 @@ const StaffAppointments = () => {
                       </td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1">
-                          {/* View — always available */}
                           <button onClick={()=>setModal({type:'view', apt})} title="View Details"
                             className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-colors">
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          {/* Check-in — scheduled only */}
                           {apt.status==='scheduled' && (
                             <button onClick={()=>setModal({type:'checkin', apt})} title="Check-in Patient"
                               className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors">
@@ -563,7 +711,9 @@ const StaffAppointments = () => {
                 </tbody>
               </table>
             </div>
-            <Pagination page={page} totalPages={totalPages} total={filtered.length} onPage={setPage} />
+            {!loading && (
+              <Pagination page={page} totalPages={totalPages} total={filtered.length} onPage={setPage} />
+            )}
           </CardContent>
         </Card>
 

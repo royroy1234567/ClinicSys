@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent } from '../components/ui/card';
 import {
@@ -6,111 +6,12 @@ import {
   Phone, X, Check, Shield,
   Hash, RefreshCw, Mail,
   Calendar, Clock, Building2,
-  UserCheck, MapPin, ChevronDown,
+  MapPin, ChevronDown, Loader2,
+  AlertCircle, CalendarCheck, UserX, BookOpen,
 } from 'lucide-react';
 
-/* ═══════════════════════════════════════════════════
-   DEMO DOCTORS
-═══════════════════════════════════════════════════ */
-const DOCTORS = [
-  {
-    id: 'DR-00001', name: 'Dr. Maria Santos',
-    specialization: 'General Physician',
-    department: 'General Medicine', room: 'Room 101',
-    email: 'm.santos@clinic.com', contact: '+63 917 100 0001',
-    status: 'available',
-    schedule: [
-      { date: 'May 12', slot: '9:00 AM – 12:00 PM', status: 'available'    },
-      { date: 'May 12', slot: '1:00 PM – 4:00 PM',  status: 'available'    },
-      { date: 'May 13', slot: '9:00 AM – 12:00 PM', status: 'fully-booked' },
-      { date: 'May 13', slot: '1:00 PM – 4:00 PM',  status: 'available'    },
-    ],
-  },
-  {
-    id: 'DR-00002', name: 'Dr. Jose Reyes',
-    specialization: 'Cardiologist',
-    department: 'Cardiology', room: 'Room 205',
-    email: 'j.reyes@clinic.com', contact: '+63 918 200 0002',
-    status: 'available',
-    schedule: [
-      { date: 'May 12', slot: '8:00 AM – 11:00 AM', status: 'available'     },
-      { date: 'May 12', slot: '2:00 PM – 5:00 PM',  status: 'not-available' },
-      { date: 'May 14', slot: '9:00 AM – 12:00 PM', status: 'available'     },
-    ],
-  },
-  {
-    id: 'DR-00003', name: 'Dr. Ana Dela Cruz',
-    specialization: 'Pediatrician',
-    department: 'Pediatrics', room: 'Room 103',
-    email: 'a.delacruz@clinic.com', contact: '+63 919 300 0003',
-    status: 'fully-booked',
-    schedule: [
-      { date: 'May 12', slot: '9:00 AM – 12:00 PM', status: 'fully-booked' },
-      { date: 'May 12', slot: '1:00 PM – 4:00 PM',  status: 'fully-booked' },
-      { date: 'May 13', slot: '9:00 AM – 12:00 PM', status: 'available'    },
-    ],
-  },
-  {
-    id: 'DR-00004', name: 'Dr. Ramon Lim',
-    specialization: 'Dermatologist',
-    department: 'Dermatology', room: 'Room 302',
-    email: 'r.lim@clinic.com', contact: '+63 920 400 0004',
-    status: 'available',
-    schedule: [
-      { date: 'May 13', slot: '10:00 AM – 1:00 PM', status: 'available' },
-      { date: 'May 15', slot: '9:00 AM – 12:00 PM', status: 'available' },
-      { date: 'May 15', slot: '2:00 PM – 5:00 PM',  status: 'available' },
-    ],
-  },
-  {
-    id: 'DR-00005', name: 'Dr. Sofia Tan',
-    specialization: 'Neurologist',
-    department: 'Neurology', room: 'Room 410',
-    email: 's.tan@clinic.com', contact: '+63 921 500 0005',
-    status: 'not-available',
-    schedule: [
-      { date: 'May 12', slot: '9:00 AM – 12:00 PM', status: 'not-available' },
-      { date: 'May 15', slot: '9:00 AM – 12:00 PM', status: 'available'     },
-    ],
-  },
-  {
-    id: 'DR-00006', name: 'Dr. Carlo Mendoza',
-    specialization: 'Orthopedic Surgeon',
-    department: 'Orthopedics', room: 'Room 501',
-    email: 'c.mendoza@clinic.com', contact: '+63 922 600 0006',
-    status: 'available',
-    schedule: [
-      { date: 'May 12', slot: '8:00 AM – 12:00 PM', status: 'available'    },
-      { date: 'May 14', slot: '1:00 PM – 5:00 PM',  status: 'available'    },
-      { date: 'May 15', slot: '8:00 AM – 12:00 PM', status: 'fully-booked' },
-    ],
-  },
-  {
-    id: 'DR-00007', name: 'Dr. Liza Flores',
-    specialization: 'OB-GYN',
-    department: 'Obstetrics & Gynecology', room: 'Room 208',
-    email: 'l.flores@clinic.com', contact: '+63 923 700 0007',
-    status: 'available',
-    schedule: [
-      { date: 'May 13', slot: '9:00 AM – 12:00 PM', status: 'available'    },
-      { date: 'May 13', slot: '2:00 PM – 5:00 PM',  status: 'fully-booked' },
-      { date: 'May 15', slot: '9:00 AM – 12:00 PM', status: 'available'    },
-    ],
-  },
-  {
-    id: 'DR-00008', name: 'Dr. Mark Aquino',
-    specialization: 'Ophthalmologist',
-    department: 'Ophthalmology', room: 'Room 115',
-    email: 'm.aquino@clinic.com', contact: '+63 924 800 0008',
-    status: 'fully-booked',
-    schedule: [
-      { date: 'May 12', slot: '9:00 AM – 12:00 PM', status: 'fully-booked' },
-      { date: 'May 14', slot: '9:00 AM – 12:00 PM', status: 'available'    },
-    ],
-  },
-];
-
-const SPECIALIZATIONS = ['All', ...Array.from(new Set(DOCTORS.map(d => d.specialization))).sort()];
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
+const TOKEN_KEY = 'auth_token';
 
 /* ═══════════════════════════════════════════════════
    HELPERS
@@ -121,7 +22,7 @@ const AVATAR_POOL = [
   'bg-amber-100 text-amber-700',  'bg-teal-100 text-teal-700',
   'bg-cyan-100 text-cyan-700',    'bg-indigo-100 text-indigo-700',
 ];
-const avatarCls = n => AVATAR_POOL[n.charCodeAt(4) % AVATAR_POOL.length];
+const avatarCls = n => AVATAR_POOL[n.charCodeAt(0) % AVATAR_POOL.length];
 const initials  = n => n.replace('Dr. ', '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
 const STATUS_META = {
@@ -130,7 +31,64 @@ const STATUS_META = {
   'not-available': { label: 'Not Available', dot: 'bg-gray-400',  pill: 'bg-gray-100 text-gray-500'   },
 };
 
-/* ── Schedule Badge ── */
+function deriveStatus(scheduleMap) {
+  const allSlots = Object.values(scheduleMap).flatMap(s => s.slots ?? []);
+  if (allSlots.length === 0) return 'not-available';
+  const hasAvailable = allSlots.some(slot => {
+    const capacity = slot.maxPts > 0 ? slot.maxPts : Infinity;
+    return slot.booked < capacity;
+  });
+  return hasAvailable ? 'available' : 'fully-booked';
+}
+
+function buildScheduleRows(scheduleMap) {
+  const rows = [];
+  Object.entries(scheduleMap).forEach(([date, day]) => {
+    (day.slots ?? []).forEach(slot => {
+      const capacity = slot.maxPts > 0 ? slot.maxPts : null;
+      let status;
+      if (capacity === null) {
+        status = 'available';
+      } else if (slot.booked >= capacity) {
+        status = 'fully-booked';
+      } else {
+        status = 'available';
+      }
+      const label = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      rows.push({ date: label, slot: `${slot.start} – ${slot.end}`, status, booked: slot.booked, maxPts: capacity });
+    });
+  });
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  return rows;
+}
+
+function authHeaders() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return {
+    'Accept': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
+}
+
+/* ── KPI Card (matches StaffAppointments style) ── */
+const KPICard = ({ label, value, sub, icon: Icon, iconBg, iconColor }) => (
+  <Card>
+    <CardContent className="p-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
+          <h3 className="text-2xl font-bold text-gray-900 mt-0.5">{value}</h3>
+          {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        </div>
+        <div className={`p-2.5 rounded-xl ${iconBg}`}>
+          <Icon className={`w-5 h-5 ${iconColor}`} />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+/* ── Slot Badge ── */
 function SlotBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META['not-available'];
   return (
@@ -143,7 +101,7 @@ function SlotBadge({ status }) {
 
 /* ── Toast ── */
 function Toast({ message, onDismiss }) {
-  React.useEffect(() => {
+  useEffect(() => {
     const t = setTimeout(onDismiss, 3000);
     return () => clearTimeout(t);
   }, []);
@@ -155,11 +113,25 @@ function Toast({ message, onDismiss }) {
   );
 }
 
+/* ── Error Banner ── */
+const ErrorBanner = ({ message, onRetry }) => (
+  <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+    <span className="flex-1">{message}</span>
+    {onRetry && (
+      <button onClick={onRetry} className="text-xs font-semibold underline underline-offset-2 hover:text-red-900">
+        Retry
+      </button>
+    )}
+  </div>
+);
+
 /* ═══════════════════════════════════════════════════
-   PROFILE MODAL  — §4 Profile + §5 Schedule + §6 Quick Actions
+   PROFILE MODAL  (with tabs: Profile | Schedule)
 ═══════════════════════════════════════════════════ */
-function ProfileModal({ doctor, onClose, onBook, onViewAvail, onWalkin }) {
+function ProfileModal({ doctor, onClose, onBook, onViewAvail }) {
   const meta = STATUS_META[doctor.status];
+  const [tab, setTab] = useState('profile'); // 'profile' | 'schedule'
 
   return (
     <div
@@ -170,7 +142,7 @@ function ProfileModal({ doctor, onClose, onBook, onViewAvail, onWalkin }) {
         className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        {/* Modal Header */}
+        {/* ── Modal Header ── */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white relative overflow-hidden">
           <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full bg-white/10 pointer-events-none" />
           <div className="absolute bottom-0 right-32 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
@@ -198,125 +170,165 @@ function ProfileModal({ doctor, onClose, onBook, onViewAvail, onWalkin }) {
               <X className="w-4 h-4 text-white" />
             </button>
           </div>
+
+          {/* ── Tabs ── */}
+          <div className="relative flex gap-1 mt-5 bg-white/10 rounded-xl p-1">
+            {[
+              { key: 'profile',  label: 'Profile',  Icon: User     },
+              { key: 'schedule', label: 'Schedule', Icon: Calendar },
+            ].map(({ key, label, Icon }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all
+                  ${tab === key
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-blue-200 hover:text-white'}`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 space-y-5 max-h-[65vh] overflow-y-auto">
+        {/* ── Modal Body ── */}
+        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
 
-          {/* §4 Basic Information */}
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-              <User className="w-3 h-3" /> Basic Information
-            </p>
-            <div className="grid grid-cols-2 gap-2.5">
-              {[
-                [Hash,        'Doctor ID',      doctor.id            ],
-                [Stethoscope, 'Specialization', doctor.specialization],
-                [Mail,        'Contact Email',  doctor.email         ],
-                [Phone,       'Contact No.',    doctor.contact       ],
-              ].map(([Icon, label, value]) => (
-                <div key={label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Icon className="w-3 h-3 text-gray-400" />
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-                  </div>
-                  <p className="text-sm font-bold text-gray-800 break-all">{value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* §4 Professional Information */}
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-              <Building2 className="w-3 h-3" /> Professional Information
-            </p>
-            <div className="space-y-2">
-              {[
-                [Building2, 'Department / Specialty', doctor.department],
-                [MapPin,    'Consultation Room',       doctor.room      ],
-              ].map(([Icon, label, value]) => (
-                <div key={label} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Icon className="w-3.5 h-3.5 text-gray-400" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-                    <p className="text-sm font-semibold text-gray-800">{value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* §5 Availability / Schedule */}
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-              <Calendar className="w-3 h-3" /> Availability / Schedule
-            </p>
-            <div className="rounded-xl border border-gray-100 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {['Date', 'Time Slot', 'Status'].map(h => (
-                      <th key={h} className="text-left py-2.5 px-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {doctor.schedule.map((s, i) => (
-                    <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
-                      <td className="py-2.5 px-3 text-xs font-semibold text-gray-700 whitespace-nowrap">{s.date}</td>
-                      <td className="py-2.5 px-3">
-                        <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 whitespace-nowrap">
-                          <Clock className="w-3 h-3 text-gray-400 flex-shrink-0" />{s.slot}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3"><SlotBadge status={s.status} /></td>
-                    </tr>
+          {/* ══ PROFILE TAB ══ */}
+          {tab === 'profile' && (
+            <>
+              {/* Basic Information */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                  <User className="w-3 h-3" /> Basic Information
+                </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    [Hash,        'Doctor ID',      doctor.id            ],
+                    [Stethoscope, 'Specialization', doctor.specialization],
+                    [Mail,        'Contact Email',  doctor.email         ],
+                    [Phone,       'Contact No.',    doctor.contact       ],
+                  ].map(([Icon, label, value]) => (
+                    <div key={label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Icon className="w-3 h-3 text-gray-400" />
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
+                      </div>
+                      <p className="text-sm font-bold text-gray-800 break-all">{value ?? '—'}</p>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                </div>
+              </div>
 
-          {/* Read-only notice */}
-          <div className="flex items-start gap-2.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-            <Shield className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-            <p><strong>Read-only access.</strong> Doctor profiles and schedules can only be modified by administrators.</p>
-          </div>
+              {/* Professional Information */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                  <Building2 className="w-3 h-3" /> Professional Information
+                </p>
+                <div className="space-y-2">
+                  {[
+                    [Building2, 'Department / Specialty', doctor.department],
+                    [MapPin,    'Consultation Room',       doctor.room      ],
+                  ].map(([Icon, label, value]) => (
+                    <div key={label} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Icon className="w-3.5 h-3.5 text-gray-400" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
+                        <p className="text-sm font-semibold text-gray-800">{value ?? '—'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-          {/* §6 Quick Actions */}
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-              <Hash className="w-3 h-3" /> Quick Actions
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => { onBook(doctor); onClose(); }}
-                className="flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm"
-              >
-                <Calendar className="w-4 h-4" />
-                Book Appointment
-              </button>
-              <button
-                onClick={() => { onViewAvail(doctor); }}
-                className="flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border-2 border-blue-200 text-blue-700 hover:bg-blue-50 text-xs font-bold transition-all"
-              >
-                <Eye className="w-4 h-4" />
-                View Schedule
-              </button>
-              <button
-                onClick={() => { onWalkin(doctor); onClose(); }}
-                className="flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border-2 border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-bold transition-all"
-              >
-                <UserCheck className="w-4 h-4" />
-                Assign Walk-in
-              </button>
-            </div>
-          </div>
+              {/* Read-only notice */}
+              <div className="flex items-start gap-2.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                <Shield className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                <p><strong>Read-only access.</strong> Doctor profiles and schedules can only be modified by administrators.</p>
+              </div>
 
-          {/* Close */}
+              {/* Quick Actions */}
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                  <Hash className="w-3 h-3" /> Quick Actions
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { onBook(doctor); onClose(); }}
+                    className="flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Book Appointment
+                  </button>
+                  <button
+                    onClick={() => setTab('schedule')}
+                    className="flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-2xl border-2 border-blue-200 text-blue-700 hover:bg-blue-50 text-xs font-bold transition-all"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View Schedule
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ══ SCHEDULE TAB ══ */}
+          {tab === 'schedule' && (
+            <>
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                  <Calendar className="w-3 h-3" /> Availability / Schedule
+                </p>
+                {doctor.schedule.length === 0 ? (
+                  <div className="text-center py-10">
+                    <CalendarCheck className="w-10 h-10 text-gray-200 mx-auto mb-2" />
+                    <p className="text-sm text-gray-400 font-medium">No schedule set for this doctor.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-gray-100 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          {['Date', 'Time Slot', 'Booked', 'Status'].map(h => (
+                            <th key={h} className="text-left py-2.5 px-3 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {doctor.schedule.map((s, i) => (
+                          <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
+                            <td className="py-2.5 px-3 text-xs font-semibold text-gray-700 whitespace-nowrap">{s.date}</td>
+                            <td className="py-2.5 px-3">
+                              <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 whitespace-nowrap">
+                                <Clock className="w-3 h-3 text-gray-400 flex-shrink-0" />{s.slot}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-xs font-semibold text-gray-600">
+                              {s.booked}{s.maxPts ? `/${s.maxPts}` : ''}
+                            </td>
+                            <td className="py-2.5 px-3"><SlotBadge status={s.status} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Back to profile shortcut */}
+              <button
+                onClick={() => setTab('profile')}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-50 transition-all"
+              >
+                <User className="w-3.5 h-3.5" /> Back to Profile
+              </button>
+            </>
+          )}
+
+          {/* Close button (always visible) */}
           <button
             onClick={onClose}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-gray-200 text-gray-500 text-sm font-bold hover:bg-gray-50 transition-all"
@@ -333,6 +345,9 @@ function ProfileModal({ doctor, onClose, onBook, onViewAvail, onWalkin }) {
    MAIN PAGE
 ═══════════════════════════════════════════════════ */
 export default function StaffDoctorsPage() {
+  const [doctors,    setDoctors]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(null);
   const [search,     setSearch]     = useState('');
   const [specFilter, setSpecFilter] = useState('All');
   const [statFilter, setStatFilter] = useState('All');
@@ -341,7 +356,59 @@ export default function StaffDoctorsPage() {
   const [page,       setPage]       = useState(1);
   const PER_PAGE = 8;
 
-  const filtered = DOCTORS.filter(d => {
+  /* ── Fetch doctors + their schedules ── */
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const usersRes = await fetch(`${API_BASE}/users?role=Doctor`, { headers: authHeaders() });
+      if (!usersRes.ok) throw new Error(`Failed to fetch doctors (${usersRes.status})`);
+      const json = await usersRes.json();
+      const users = Array.isArray(json) ? json : (json.data ?? Object.values(json));
+      const doctorUsers = users.filter(u => u.role === 'Doctor' && u.status === 'Active');
+
+      const scheduleResults = await Promise.allSettled(
+        doctorUsers.map(u =>
+          fetch(`${API_BASE}/doctor-schedules?user_id=${u.user_id}`, { headers: authHeaders() })
+            .then(r => r.ok ? r.json() : {})
+        )
+      );
+
+      const enriched = doctorUsers.map((u, i) => {
+        const scheduleMap = scheduleResults[i].status === 'fulfilled'
+          ? (scheduleResults[i].value ?? {})
+          : {};
+        const schedule = buildScheduleRows(scheduleMap);
+        const status   = deriveStatus(scheduleMap);
+        const fullName = `Dr. ${u.first_name} ${u.last_name}`;
+        return {
+          id:             `DR-${String(u.user_id).padStart(5, '0')}`,
+          userId:         u.user_id,
+          name:           fullName,
+          specialization: u.specialization ?? u.license_number ?? 'General Physician',
+          department:     u.department ?? u.role,
+          room:           u.room ?? '—',
+          email:          u.email,
+          contact:        u.contact_number ?? '—',
+          status,
+          schedule,
+        };
+      });
+
+      setDoctors(enriched);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  /* ── Derived state ── */
+  const specializations = ['All', ...Array.from(new Set(doctors.map(d => d.specialization))).sort()];
+
+  const filtered = doctors.filter(d => {
     const q = search.toLowerCase();
     const matchSearch =
       d.name.toLowerCase().includes(q) ||
@@ -357,49 +424,74 @@ export default function StaffDoctorsPage() {
   const dirty      = search || specFilter !== 'All' || statFilter !== 'All';
   const reset      = () => { setSearch(''); setSpecFilter('All'); setStatFilter('All'); setPage(1); };
 
-  const availableCount   = DOCTORS.filter(d => d.status === 'available').length;
-  const fullyBookedCount = DOCTORS.filter(d => d.status === 'fully-booked').length;
-  const notAvailCount    = DOCTORS.filter(d => d.status === 'not-available').length;
+  const availableCount   = doctors.filter(d => d.status === 'available').length;
+  const fullyBookedCount = doctors.filter(d => d.status === 'fully-booked').length;
+  const notAvailCount    = doctors.filter(d => d.status === 'not-available').length;
 
+  /* ── Render ── */
   return (
     <MainLayout title="Doctors" subtitle="View doctor information and availability for scheduling appointments.">
       <div className="space-y-5">
 
-        {/* ══ §1 HEADER ══ */}
-        <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl p-6 text-white relative overflow-hidden">
-          <div className="absolute -top-8 -right-8 w-44 h-44 rounded-full bg-white/5 pointer-events-none" />
-          <div className="absolute bottom-0 right-32 w-28 h-28 rounded-full bg-white/5 pointer-events-none" />
-          <div className="relative flex items-start justify-between flex-wrap gap-4">
-            <div>
-              <h2 className="text-2xl font-black">Doctors</h2>
-              <p className="text-blue-200 text-sm mt-1 max-w-md">
-                View doctor information and availability for scheduling appointments.
-              </p>
-            </div>
-            <div className="flex items-center gap-5">
-              {[
-                { label: 'Total Doctors', value: DOCTORS.length    },
-                { label: 'Available',     value: availableCount    },
-                { label: 'Fully Booked',  value: fullyBookedCount  },
-                { label: 'Unavailable',   value: notAvailCount     },
-              ].map((s, i) => (
-                <React.Fragment key={s.label}>
-                  {i > 0 && <div className="w-px h-8 bg-white/20" />}
-                  <div className="text-right">
-                    <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wide">{s.label}</p>
-                    <p className="text-2xl font-black">{s.value}</p>
-                  </div>
-                </React.Fragment>
-              ))}
-            </div>
+        {/* ══ §1 DATE + REFRESH ROW (matches StaffAppointments) ══ */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            <Calendar className="w-3.5 h-3.5 text-blue-500" />
+            <span className="font-semibold text-gray-600">
+              {new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </span>
           </div>
-          <div className="relative flex items-center gap-2 mt-4 pt-4 border-t border-white/10 text-xs text-blue-200 font-semibold">
-            <Shield className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
-            Staff access: View doctor profiles and schedules only. Editing is restricted to administrators.
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
           </div>
         </div>
 
-        {/* ══ §2 SEARCH & FILTERS ══ */}
+        {/* ══ Error Banner ══ */}
+        {error && <ErrorBanner message={`Failed to load doctors: ${error}`} onRetry={fetchData} />}
+
+        {/* ══ §2 KPI CARDS (matches StaffAppointments) ══ */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard
+            label="Total Doctors"
+            value={loading ? '…' : doctors.length}
+            icon={Stethoscope}
+            iconBg="bg-blue-50"
+            iconColor="text-blue-600"
+          />
+          <KPICard
+            label="Available"
+            value={loading ? '…' : availableCount}
+            sub="with open slots"
+            icon={CalendarCheck}
+            iconBg="bg-green-50"
+            iconColor="text-green-600"
+          />
+          <KPICard
+            label="Fully Booked"
+            value={loading ? '…' : fullyBookedCount}
+            sub="no open slots"
+            icon={BookOpen}
+            iconBg="bg-amber-50"
+            iconColor="text-amber-600"
+          />
+          <KPICard
+            label="Unavailable"
+            value={loading ? '…' : notAvailCount}
+            sub="no schedule set"
+            icon={UserX}
+            iconBg="bg-gray-50"
+            iconColor="text-gray-500"
+          />
+        </div>
+
+        {/* ══ §3 SEARCH & FILTERS ══ */}
         <Card className="border border-gray-100 shadow-sm">
           <CardContent className="p-5">
             <div className="flex items-center gap-3 flex-wrap">
@@ -428,14 +520,14 @@ export default function StaffDoctorsPage() {
                   onChange={e => { setSpecFilter(e.target.value); setPage(1); }}
                   className="appearance-none pl-3.5 pr-8 py-2.5 text-xs font-bold border border-gray-200 rounded-xl bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
-                  {SPECIALIZATIONS.map(s => (
+                  {specializations.map(s => (
                     <option key={s} value={s}>{s === 'All' ? 'All Specializations' : s}</option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
               </div>
 
-              {/* Availability status pills */}
+              {/* Status filter pills */}
               <div className="flex gap-1.5 flex-wrap">
                 {[
                   { value: 'All',           label: 'All Status'    },
@@ -462,13 +554,13 @@ export default function StaffDoctorsPage() {
               )}
 
               <div className="ml-auto text-xs text-gray-400 font-semibold whitespace-nowrap">
-                {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+                {loading ? 'Loading…' : `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`}
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* ══ §3 DOCTORS LIST TABLE ══ */}
+        {/* ══ §4 DOCTORS LIST TABLE ══ */}
         <Card className="border border-gray-100 shadow-sm">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -481,7 +573,15 @@ export default function StaffDoctorsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated.length === 0 && (
+                  {loading && (
+                    <tr>
+                      <td colSpan={5} className="py-16 text-center">
+                        <Loader2 className="w-8 h-8 text-blue-400 mx-auto mb-3 animate-spin" />
+                        <p className="text-sm text-gray-400 font-medium">Loading doctors and schedules…</p>
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && paginated.length === 0 && (
                     <tr>
                       <td colSpan={5} className="py-16 text-center">
                         <Stethoscope className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -490,7 +590,7 @@ export default function StaffDoctorsPage() {
                       </td>
                     </tr>
                   )}
-                  {paginated.map(d => {
+                  {!loading && paginated.map(d => {
                     const meta = STATUS_META[d.status];
                     return (
                       <tr key={d.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
@@ -520,7 +620,7 @@ export default function StaffDoctorsPage() {
                           </span>
                         </td>
 
-                        {/* Availability Status */}
+                        {/* Status */}
                         <td className="py-3.5 px-4">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${meta.pill}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
@@ -528,7 +628,7 @@ export default function StaffDoctorsPage() {
                           </span>
                         </td>
 
-                        {/* Actions — single View button per spec */}
+                        {/* Actions */}
                         <td className="py-3.5 px-4">
                           <button
                             onClick={() => setViewDoctor(d)}
@@ -545,57 +645,38 @@ export default function StaffDoctorsPage() {
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
+            {!loading && totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
                 <p className="text-xs text-gray-400 font-semibold">
                   Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length} doctors
                 </p>
                 <div className="flex items-center gap-1.5">
                   <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                    className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-all text-xs font-bold">‹</button>
+                    className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-200 disabled:opacity-30 transition-all text-xs font-bold">‹</button>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
                     <button key={n} onClick={() => setPage(n)}
                       className={`w-8 h-8 rounded-lg text-xs font-bold transition-all
-                        ${page === n ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                        ${page === n ? 'bg-blue-600 text-white shadow-sm' : 'border border-gray-200 text-gray-500 hover:bg-gray-200'}`}>
                       {n}
                     </button>
                   ))}
                   <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                    className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-all text-xs font-bold">›</button>
+                    className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-200 disabled:opacity-30 transition-all text-xs font-bold">›</button>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Staff permissions reminder */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-100 rounded-2xl text-xs text-green-700">
-            <Check className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-green-800 mb-1">Staff Can</p>
-              <p>View doctor profiles · View doctor availability · Use schedule for booking appointments</p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-700">
-            <Shield className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-red-800 mb-1">Restricted Access</p>
-              <p>Add doctors · Edit doctor profiles · Change doctor schedules · Delete doctors</p>
-            </div>
-          </div>
-        </div>
-
       </div>
 
-      {/* Profile Modal — §4 + §5 + §6 */}
+      {/* Profile Modal */}
       {viewDoctor && (
         <ProfileModal
           doctor={viewDoctor}
           onClose={() => setViewDoctor(null)}
           onBook={d => setToast(`Booking appointment with ${d.name}…`)}
           onViewAvail={d => setToast(`Viewing full schedule for ${d.name}…`)}
-          onWalkin={d => setToast(`Assigning walk-in patient to ${d.name}…`)}
         />
       )}
 

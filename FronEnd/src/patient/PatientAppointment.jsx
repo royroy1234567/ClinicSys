@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import {
   Calendar, Clock, User, Phone, Mail, FileText,
   ChevronLeft, ChevronRight, Check, X, Bell, Stethoscope,
-  CheckCircle2, AlertCircle, XCircle, PlayCircle, Star,
-  MapPin, Info, Eye, Trash2, Search, ChevronDown,
+  XCircle, Star, MapPin, Info, Search, Loader2, Users, UserCheck,
+  Shuffle, ArrowRight,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════
@@ -17,136 +17,69 @@ const CLINIC = {
   phone:   '+63 2 8888 0000',
 };
 
-/* ═══════════════════════════════════════════════
-   CURRENT PATIENT
-═══════════════════════════════════════════════ */
-const ME = {
-  id:      'PT-00045',
-  name:    'Juan dela Cruz',
-  contact: '+63 917 555 1234',
-  email:   'juan.delacruz@email.com',
-};
-
-/* ═══════════════════════════════════════════════
-   DOCTORS
-═══════════════════════════════════════════════ */
-const DOCTORS = [
-  {
-    id: 'D1', name: 'Dr. Maria Santos', specialty: 'General Physician',
-    rating: 4.9, patients: 1240, workDays: [1,2,3,4,5],
-    slots:  ['08:00','08:30','09:00','09:30','10:00','10:30','13:00','13:30','14:00','14:30','15:00'],
-    bio:    'Board-certified general physician with 14 years of clinical experience.',
-    color:  'blue',
-  },
-  {
-    id: 'D2', name: 'Dr. Jose Reyes', specialty: 'Internal Medicine',
-    rating: 4.8, patients: 980, workDays: [1,3,5],
-    slots:  ['09:00','09:30','10:00','11:00','14:00','14:30','15:00','15:30'],
-    bio:    'Specialist in adult diseases, hypertension, and diabetes management.',
-    color:  'teal',
-  },
-  {
-    id: 'D3', name: 'Dr. Ana Cruz', specialty: 'Pediatrics',
-    rating: 4.9, patients: 1580, workDays: [2,4,6],
-    slots:  ['08:00','08:30','09:00','09:30','10:00','13:00','13:30','14:00'],
-    bio:    'Dedicated to childrens health from newborns to adolescents.',
-    color:  'rose',
-  },
-  {
-    id: 'D4', name: 'Dr. Carlos Lim', specialty: 'Cardiology',
-    rating: 4.7, patients: 760, workDays: [1,2,4,5],
-    slots:  ['09:00','09:30','10:00','10:30','14:00','14:30'],
-    bio:    'Expert in heart disease diagnosis, ECG interpretation, and cardiac care.',
-    color:  'orange',
-  },
-  {
-    id: 'D5', name: 'Dr. Elena Ramos', specialty: 'Dermatology',
-    rating: 4.8, patients: 1100, workDays: [2,3,5,6],
-    slots:  ['08:30','09:00','09:30','10:00','13:00','13:30','14:00','14:30','15:00'],
-    bio:    'Specialist in skin, hair, and nail disorders. Cosmetic dermatology expert.',
-    color:  'purple',
-  },
-  {
-    id: 'D6', name: 'Dr. Ben Torres', specialty: 'Orthopedics',
-    rating: 4.6, patients: 640, workDays: [1,3,4],
-    slots:  ['08:00','08:30','09:00','09:30','10:00','10:30','14:00','14:30','15:00'],
-    bio:    'Bone, joint, and muscle specialist. Sports injury and fracture care.',
-    color:  'emerald',
-  },
-];
-
-/* ═══════════════════════════════════════════════
-   BOOKED SLOTS (simulate server state)
-═══════════════════════════════════════════════ */
-const BOOKED_SLOTS = {
-  'D1_2026-03-06': ['08:00','09:00','10:00','13:00','14:30'],
-  'D1_2026-03-09': ['09:00','09:30','10:00','10:30','13:00','13:30','14:00','14:30','15:00'],
-  'D2_2026-03-09': ['09:00','09:30','10:00'],
-  'D3_2026-03-10': ['08:00','08:30','09:00','09:30'],
-  'D4_2026-03-09': ['09:00','09:30','10:00','10:30','14:00','14:30'],
-};
-
-/* ═══════════════════════════════════════════════
-   EXISTING APPOINTMENTS
-═══════════════════════════════════════════════ */
-const INIT_APTS = [
-  { id:'APT-101', doctorId:'D2', doctor:'Dr. Jose Reyes',  specialty:'Internal Medicine', date:'2026-03-09', time:'11:00', reason:'Blood pressure follow-up',  status:'scheduled' },
-  { id:'APT-099', doctorId:'D1', doctor:'Dr. Maria Santos',specialty:'General Physician', date:'2026-02-20', time:'09:30', reason:'Annual physical exam',      status:'completed' },
-  { id:'APT-088', doctorId:'D3', doctor:'Dr. Ana Cruz',    specialty:'Pediatrics',        date:'2026-01-15', time:'10:00', reason:'Flu symptoms',              status:'completed' },
-  { id:'APT-076', doctorId:'D4', doctor:'Dr. Carlos Lim',  specialty:'Cardiology',        date:'2026-01-05', time:'09:00', reason:'Chest discomfort',          status:'cancelled' },
-];
+const API_BASE = 'http://backend1.test/api';
 
 /* ═══════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════ */
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS    = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DAYS      = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DAYS_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
-const padZ  = (n) => String(n).padStart(2,'0');
-const fmtD  = (d) => `${d.getFullYear()}-${padZ(d.getMonth()+1)}-${padZ(d.getDate())}`;
-const TODAY = fmtD(new Date());
+const padZ        = (n) => String(n).padStart(2,'0');
+const fmtD        = (d) => `${d.getFullYear()}-${padZ(d.getMonth()+1)}-${padZ(d.getDate())}`;
+const TODAY       = fmtD(new Date());
+const toMins      = (t) => { if(!t) return 0; const[h,m]=t.split(':').map(Number); return h*60+m; };
+const fmtTime     = (t) => { if(!t) return '—'; const[h,m]=t.split(':'); const hr=parseInt(h); return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?'PM':'AM'}`; };
+const fmtDateLong = (ds) => { const d=new Date(ds+'T00:00:00'); return `${DAYS_FULL[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; };
 
-const fmtTime = (t) => {
-  const [h, m] = t.split(':');
-  const hr = parseInt(h);
-  return `${hr>12?hr-12:hr||12}:${m} ${hr>=12?'PM':'AM'}`;
+const generateSlotTimes = (start, end, duration) => {
+  if (!duration) return [];
+  const times = [];
+  let cur = toMins(start);
+  const endM = toMins(end);
+  while (cur + duration <= endM) {
+    const slotEnd = cur + duration;
+    const overlapsLunch = cur < 780 && slotEnd > 720;
+    if (!overlapsLunch) {
+      times.push(`${padZ(Math.floor(cur/60))}:${padZ(cur%60)}`);
+      cur += duration;
+    } else if (cur < 720) {
+      cur = 780;
+    } else {
+      cur += duration;
+    }
+  }
+  return times;
 };
 
-const fmtDateLong = (ds) => {
-  const d = new Date(ds+'T00:00:00');
-  return `${DAYS_FULL[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-};
-
-const STATUS_CFG = {
-  scheduled: { label:'Scheduled', bg:'bg-blue-50',   text:'text-blue-700',   dot:'bg-blue-500',   border:'border-blue-200'  },
-  confirmed: { label:'Confirmed', bg:'bg-teal-50',   text:'text-teal-700',   dot:'bg-teal-500',   border:'border-teal-200'  },
-  ongoing:   { label:'Ongoing',   bg:'bg-yellow-50', text:'text-yellow-700', dot:'bg-yellow-500', border:'border-yellow-300'},
-  completed: { label:'Completed', bg:'bg-green-50',  text:'text-green-700',  dot:'bg-green-500',  border:'border-green-200' },
-  cancelled: { label:'Cancelled', bg:'bg-red-50',    text:'text-red-600',    dot:'bg-red-500',    border:'border-red-200'   },
-};
-
-const DOC_COLORS = {
-  blue:    { ring:'ring-blue-200',    avatar:'bg-blue-100 text-blue-700',    tag:'bg-blue-50 text-blue-600 border-blue-200',    btn:'bg-blue-600 hover:bg-blue-700 shadow-blue-200'   },
-  teal:    { ring:'ring-teal-200',    avatar:'bg-teal-100 text-teal-700',    tag:'bg-teal-50 text-teal-600 border-teal-200',    btn:'bg-teal-600 hover:bg-teal-700 shadow-teal-200'   },
-  rose:    { ring:'ring-rose-200',    avatar:'bg-rose-100 text-rose-700',    tag:'bg-rose-50 text-rose-600 border-rose-200',    btn:'bg-rose-600 hover:bg-rose-700 shadow-rose-200'   },
-  orange:  { ring:'ring-orange-200',  avatar:'bg-orange-100 text-orange-700',tag:'bg-orange-50 text-orange-600 border-orange-200',btn:'bg-orange-600 hover:bg-orange-700 shadow-orange-200'},
-  purple:  { ring:'ring-purple-200',  avatar:'bg-purple-100 text-purple-700',tag:'bg-purple-50 text-purple-600 border-purple-200',btn:'bg-purple-600 hover:bg-purple-700 shadow-purple-200'},
-  emerald: { ring:'ring-emerald-200', avatar:'bg-emerald-100 text-emerald-700',tag:'bg-emerald-50 text-emerald-600 border-emerald-200',btn:'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'},
+const DOC_COLORS = ['blue','teal','rose','orange','purple','emerald'];
+const DOC_COLOR_CFG = {
+  blue:    { avatar:'bg-blue-100 text-blue-700',      btn:'bg-blue-600 hover:bg-blue-700 shadow-blue-200'       },
+  teal:    { avatar:'bg-teal-100 text-teal-700',      btn:'bg-teal-600 hover:bg-teal-700 shadow-teal-200'       },
+  rose:    { avatar:'bg-rose-100 text-rose-700',      btn:'bg-rose-600 hover:bg-rose-700 shadow-rose-200'       },
+  orange:  { avatar:'bg-orange-100 text-orange-700',  btn:'bg-orange-600 hover:bg-orange-700 shadow-orange-200' },
+  purple:  { avatar:'bg-purple-100 text-purple-700',  btn:'bg-purple-600 hover:bg-purple-700 shadow-purple-200' },
+  emerald: { avatar:'bg-emerald-100 text-emerald-700',btn:'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'},
 };
 
 const inputCls = "w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 placeholder:text-gray-300 transition-all";
 const labelCls = "block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5";
+
+const authHeaders = () => {
+  const token = localStorage.getItem('auth_token');
+  return { 'Content-Type':'application/json', Accept:'application/json', ...(token && { Authorization:`Bearer ${token}` }) };
+};
 
 /* ═══════════════════════════════════════════════
    NOTIFICATION BANNER
 ═══════════════════════════════════════════════ */
 const Notif = ({ msg, type, onClose }) => {
   const cfg = {
-    success: 'bg-green-50 border-green-200 text-green-800',
-    info:    'bg-blue-50 border-blue-200 text-blue-800',
-    warn:    'bg-yellow-50 border-yellow-200 text-yellow-800',
-    error:   'bg-red-50 border-red-200 text-red-700',
+    success:'bg-green-50 border-green-200 text-green-800',
+    info:   'bg-blue-50 border-blue-200 text-blue-800',
+    warn:   'bg-yellow-50 border-yellow-200 text-yellow-800',
+    error:  'bg-red-50 border-red-200 text-red-700',
   };
   return (
     <div className={`flex items-start gap-3 px-4 py-3 rounded-2xl border text-sm font-semibold ${cfg[type]}`}>
@@ -158,45 +91,41 @@ const Notif = ({ msg, type, onClose }) => {
 };
 
 /* ═══════════════════════════════════════════════
-   MINI CALENDAR
+   MINI CALENDAR — uses real doctor schedule
 ═══════════════════════════════════════════════ */
-const MiniCalendar = ({ doctor, selectedDate, onSelect }) => {
+const MiniCalendar = ({ doctorSchedule, selectedDate, onSelect }) => {
   const [monthOffset, setMonthOffset] = useState(0);
-  const base  = new Date();
-  base.setDate(1);
-  base.setMonth(base.getMonth() + monthOffset);
-  const yr  = base.getFullYear();
-  const mo  = base.getMonth();
-  const first = new Date(yr, mo, 1);
-  const last  = new Date(yr, mo+1, 0);
-  const pad   = first.getDay(); // Sun = 0
-
-  const cells = [];
-  for (let i=0; i<pad; i++) cells.push(null);
-  for (let d=1; d<=last.getDate(); d++) cells.push(new Date(yr, mo, d));
+  const base = new Date(); base.setDate(1); base.setMonth(base.getMonth()+monthOffset);
+  const yr=base.getFullYear(), mo=base.getMonth();
+  const first=new Date(yr,mo,1), last=new Date(yr,mo+1,0), pad=first.getDay();
+  const cells=[];
+  for(let i=0;i<pad;i++) cells.push(null);
+  for(let d=1;d<=last.getDate();d++) cells.push(new Date(yr,mo,d));
 
   const getDayStatus = (d) => {
-    if (!d) return 'empty';
-    const ds  = fmtD(d);
+    if(!d) return 'empty';
+    const ds = fmtD(d);
     const now = new Date(); now.setHours(0,0,0,0);
-    if (d < now) return 'past';
-    if (!doctor.workDays.includes(d.getDay())) return 'no-schedule';
-    const booked = BOOKED_SLOTS[`${doctor.id}_${ds}`] || [];
-    if (booked.length >= doctor.slots.length) return 'full';
+    if(d < now) return 'past';
+    const sched = doctorSchedule[ds];
+    if(!sched) return 'no-schedule';
+    const allSlots = sched.slots.flatMap(s => generateSlotTimes(s.start, s.end, s.duration));
+    const totalBooked = sched.slots.reduce((a,s) => a + (s.booked||0), 0);
+    const available = allSlots.length - totalBooked;
+    if(allSlots.length === 0) return 'no-schedule';
+    if(available <= 0) return 'full';
     return 'available';
   };
 
   const STATUS_STYLE = {
-    'past':        'text-gray-200 cursor-not-allowed',
-    'empty':       '',
-    'no-schedule': 'text-gray-200 cursor-not-allowed',
-    'full':        'bg-red-50 text-red-300 cursor-not-allowed',
-    'available':   'hover:bg-blue-600 hover:text-white cursor-pointer text-gray-700 font-semibold',
+    past:'text-gray-200 cursor-not-allowed', empty:'',
+    'no-schedule':'text-gray-200 cursor-not-allowed',
+    full:'bg-red-50 text-red-300 cursor-not-allowed',
+    available:'hover:bg-blue-600 hover:text-white cursor-pointer text-gray-700 font-semibold',
   };
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      {/* Month nav */}
       <div className="flex items-center justify-between mb-5">
         <button onClick={()=>setMonthOffset(m=>m-1)} disabled={monthOffset<=0}
           className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 transition-all">
@@ -208,47 +137,105 @@ const MiniCalendar = ({ doctor, selectedDate, onSelect }) => {
           <ChevronRight className="w-4 h-4 text-gray-500"/>
         </button>
       </div>
-
-      {/* Day labels */}
       <div className="grid grid-cols-7 mb-2">
-        {DAYS.map(d => (
-          <div key={d} className="text-center text-[10px] font-bold text-gray-400 uppercase">{d}</div>
-        ))}
+        {DAYS.map(d=><div key={d} className="text-center text-[10px] font-bold text-gray-400 uppercase">{d}</div>)}
       </div>
-
-      {/* Date grid */}
       <div className="grid grid-cols-7 gap-1">
-        {cells.map((d, i) => {
-          if (!d) return <div key={`p${i}`}/>;
-          const ds     = fmtD(d);
-          const status = getDayStatus(d);
-          const isToday   = ds === TODAY;
-          const isSelected= ds === selectedDate;
+        {cells.map((d,i)=>{
+          if(!d) return <div key={`p${i}`}/>;
+          const ds=fmtD(d), status=getDayStatus(d);
+          const isToday=ds===TODAY, isSelected=ds===selectedDate;
           return (
-            <button
-              key={ds}
-              disabled={['past','no-schedule','full','empty'].includes(status)}
-              onClick={() => status==='available' && onSelect(ds)}
-              className={`
-                aspect-square rounded-xl text-xs flex items-center justify-center transition-all
-                ${isSelected ? 'bg-blue-600 text-white shadow-md shadow-blue-200 font-black' :
-                  isToday    ? 'ring-2 ring-blue-400 ring-offset-1 font-bold' :
-                               STATUS_STYLE[status]}
-              `}
-            >
+            <button key={ds} disabled={['past','no-schedule','full','empty'].includes(status)}
+              onClick={()=>status==='available'&&onSelect(ds)}
+              className={`aspect-square rounded-xl text-xs flex items-center justify-center transition-all
+                ${isSelected?'bg-blue-600 text-white shadow-md shadow-blue-200 font-black':
+                  isToday?'ring-2 ring-blue-400 ring-offset-1 font-bold':STATUS_STYLE[status]}`}>
               {d.getDate()}
             </button>
           );
         })}
       </div>
-
-      {/* Legend */}
       <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100 flex-wrap">
-        {[
-          {color:'bg-blue-500',  label:'Available' },
-          {color:'bg-red-300',   label:'Full'      },
-          {color:'bg-gray-200',  label:'No schedule'},
-        ].map(l => (
+        {[{color:'bg-blue-500',label:'Available'},{color:'bg-red-300',label:'Full'},{color:'bg-gray-200',label:'No schedule'}].map(l=>(
+          <span key={l.label} className="flex items-center gap-1.5 text-xs text-gray-400">
+            <span className={`w-2.5 h-2.5 rounded-full ${l.color}`}/>{l.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════
+   GENERAL CALENDAR — merges all doctors' schedules
+═══════════════════════════════════════════════ */
+const GeneralCalendar = ({ allDoctorSchedules, selectedDate, onSelect }) => {
+  const [monthOffset, setMonthOffset] = useState(0);
+  const base = new Date(); base.setDate(1); base.setMonth(base.getMonth()+monthOffset);
+  const yr=base.getFullYear(), mo=base.getMonth();
+  const first=new Date(yr,mo,1), last=new Date(yr,mo+1,0), pad=first.getDay();
+  const cells=[];
+  for(let i=0;i<pad;i++) cells.push(null);
+  for(let d=1;d<=last.getDate();d++) cells.push(new Date(yr,mo,d));
+
+  // A date is "available" if at least one doctor has a free slot
+  const getDayStatus = (d) => {
+    if(!d) return 'empty';
+    const ds = fmtD(d);
+    const now = new Date(); now.setHours(0,0,0,0);
+    if(d < now) return 'past';
+    let hasAny = false;
+    for(const sched of Object.values(allDoctorSchedules)) {
+      const day = sched[ds];
+      if(!day) continue;
+      const allSlots = day.slots.flatMap(s => generateSlotTimes(s.start, s.end, s.duration));
+      const totalBooked = day.slots.reduce((a,s) => a + (s.booked||0), 0);
+      if(allSlots.length - totalBooked > 0) { hasAny = true; break; }
+    }
+    return hasAny ? 'available' : 'no-schedule';
+  };
+
+  const STATUS_STYLE = {
+    past:'text-gray-200 cursor-not-allowed', empty:'',
+    'no-schedule':'text-gray-200 cursor-not-allowed',
+    available:'hover:bg-indigo-600 hover:text-white cursor-pointer text-gray-700 font-semibold',
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-5">
+        <button onClick={()=>setMonthOffset(m=>m-1)} disabled={monthOffset<=0}
+          className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 transition-all">
+          <ChevronLeft className="w-4 h-4 text-gray-500"/>
+        </button>
+        <h3 className="text-sm font-black text-gray-800">{MONTHS[mo]} {yr}</h3>
+        <button onClick={()=>setMonthOffset(m=>m+1)}
+          className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-all">
+          <ChevronRight className="w-4 h-4 text-gray-500"/>
+        </button>
+      </div>
+      <div className="grid grid-cols-7 mb-2">
+        {DAYS.map(d=><div key={d} className="text-center text-[10px] font-bold text-gray-400 uppercase">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d,i)=>{
+          if(!d) return <div key={`p${i}`}/>;
+          const ds=fmtD(d), status=getDayStatus(d);
+          const isToday=ds===TODAY, isSelected=ds===selectedDate;
+          return (
+            <button key={ds} disabled={['past','no-schedule','empty'].includes(status)}
+              onClick={()=>status==='available'&&onSelect(ds)}
+              className={`aspect-square rounded-xl text-xs flex items-center justify-center transition-all
+                ${isSelected?'bg-indigo-600 text-white shadow-md shadow-indigo-200 font-black':
+                  isToday?'ring-2 ring-indigo-400 ring-offset-1 font-bold':STATUS_STYLE[status]}`}>
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100 flex-wrap">
+        {[{color:'bg-indigo-500',label:'Available'},{color:'bg-gray-200',label:'No availability'}].map(l=>(
           <span key={l.label} className="flex items-center gap-1.5 text-xs text-gray-400">
             <span className={`w-2.5 h-2.5 rounded-full ${l.color}`}/>{l.label}
           </span>
@@ -262,99 +249,262 @@ const MiniCalendar = ({ doctor, selectedDate, onSelect }) => {
    MAIN PAGE
 ═══════════════════════════════════════════════ */
 export default function PatientAppointmentPage() {
-  /* ── flow state ── */
-  const [step,       setStep]      = useState('doctors');   // doctors | calendar | form | summary | success
-  const [selDoctor,  setSelDoctor] = useState(null);
-  const [selDate,    setSelDate]   = useState('');
-  const [selTime,    setSelTime]   = useState('');
-  const [filterSpec, setFilterSpec]= useState('All');
-  const [searchDoc,  setSearchDoc] = useState('');
-  const [form,       setForm]      = useState({ name:ME.name, contact:ME.contact, email:ME.email, reason:'', notes:'' });
-  const [appointments, setApts]    = useState(INIT_APTS);
-  const [notifs,      setNotifs]   = useState([
-    { id:1, msg:`Reminder: Your appointment with Dr. Jose Reyes is on March 9 at 11:00 AM.`, type:'info' },
-  ]);
-  const [detailApt,  setDetailApt] = useState(null);
-  const [aptFilter,  setAptFilter] = useState('all');
-  const [newAptId,   setNewAptId]  = useState(null);
+  const [doctors,         setDoctors]         = useState([]);
+  const [docLoading,      setDocLoading]       = useState(true);
+  const [docError,        setDocError]         = useState(null);
+  const [doctorSchedules, setDoctorSchedules]  = useState({});
+  const [schedLoading,    setSchedLoading]     = useState(false);
+  const [allSchedsLoading,setAllSchedsLoading] = useState(false);
+  const [services,        setServices]         = useState([]);
+  const [booking,         setBooking]          = useState(false);
+
+  const [patientInfo, setPatientInfo] = useState({ name:'', contact:'', email:'' });
+
+  // bookingMode: 'general' | 'specific'
+  const [bookingMode, setBookingMode] = useState(null);
+
+  // step for SPECIFIC flow: 'type-select' | 'doctors' | 'calendar' | 'form' | 'summary' | 'success'
+  // step for GENERAL flow:  'type-select' | 'general-calendar' | 'form' | 'summary' | 'success'
+  const [step,      setStep]      = useState('type-select');
+  const [selDoctor, setSelDoctor] = useState(null);
+  const [selDate,   setSelDate]   = useState('');
+  const [selTime,   setSelTime]   = useState('');
+  const [searchDoc, setSearchDoc] = useState('');
+  const [form,      setForm]      = useState({ name:'', contact:'', email:'', service_id:'', reason:'', notes:'' });
+  const [notifs,    setNotifs]    = useState([]);
+  const [newAptId,  setNewAptId]  = useState(null);
+
+  // For general booking: available slots across all doctors for a selected date/time
+  const [generalSlots, setGeneralSlots] = useState([]); // [{doctorId, doctorName, doctorColor, time}]
 
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const dismissNotif = (id) => setNotifs(n=>n.filter(x=>x.id!==id));
 
-  /* ── filtered doctors ── */
-  const specialties = ['All', ...Array.from(new Set(DOCTORS.map(d=>d.specialty)))];
-  const filteredDoctors = DOCTORS.filter(d => {
-    const matchSpec = filterSpec==='All' || d.specialty===filterSpec;
-    const matchSearch = d.name.toLowerCase().includes(searchDoc.toLowerCase()) || d.specialty.toLowerCase().includes(searchDoc.toLowerCase());
-    return matchSpec && matchSearch;
-  });
+  /* ── Fetch logged-in patient profile ── */
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/patient/profile`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const p = await res.json();
+        const info = {
+          name:    `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim(),
+          contact: p.mobile ?? '',
+          email:   p.email  ?? '',
+        };
+        setPatientInfo(info);
+        setForm(f => ({ ...f, ...info }));
+      } catch {}
+    };
+    load();
+  }, []);
 
-  /* ── available time slots for selected date/doctor ── */
-  const availableSlots = useMemo(() => {
-    if (!selDoctor || !selDate) return [];
-    const booked = BOOKED_SLOTS[`${selDoctor.id}_${selDate}`] || [];
-    return selDoctor.slots.filter(s => !booked.includes(s));
-  }, [selDoctor, selDate]);
+  /* ── Fetch doctors ── */
+  const fetchDoctors = useCallback(async () => {
+    setDocLoading(true); setDocError(null);
+    try {
+      const res = await fetch(`${API_BASE}/users?role=Doctor`, { headers: authHeaders() });
+      if(!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data.data ?? [];
+      const active = list
+        .filter(u => u.status?.toLowerCase() === 'active')
+        .map((raw, i) => ({
+          id:       raw.user_id,
+          name:     `${raw.first_name ?? ''} ${raw.last_name ?? ''}`.trim(),
+          email:    raw.email          ?? '',
+          phone:    raw.contact_number ?? '',
+          license:  raw.license_number ?? '',
+          color:    DOC_COLORS[i % DOC_COLORS.length],
+        }));
+      setDoctors(active);
+    } catch(err) {
+      setDocError(err.message);
+    } finally {
+      setDocLoading(false);
+    }
+  }, []);
 
-  /* ── handle doctor select ── */
+  useEffect(() => { fetchDoctors(); }, [fetchDoctors]);
+
+  /* ── Fetch active services ── */
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/servics?status=active`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        setServices(Array.isArray(data) ? data : data.data ?? []);
+      } catch {}
+    };
+    load();
+  }, []);
+
+  /* ── Fetch schedule for one doctor ── */
+  const fetchDoctorSchedule = useCallback(async (userId) => {
+    if(doctorSchedules[userId]) return doctorSchedules[userId];
+    try {
+      const res = await fetch(`${API_BASE}/doctor-schedules?user_id=${userId}`, { headers: authHeaders() });
+      if(!res.ok) throw new Error();
+      const data = await res.json();
+      const normalized = {};
+      for(const [date, d] of Object.entries(data ?? {})) {
+        normalized[date] = { ...d, slots: Array.isArray(d.slots) ? d.slots : [] };
+      }
+      setDoctorSchedules(prev => ({ ...prev, [userId]: normalized }));
+      return normalized;
+    } catch {
+      setDoctorSchedules(prev => ({ ...prev, [userId]: {} }));
+      return {};
+    }
+  }, [doctorSchedules]);
+
+  /* ── Fetch ALL doctor schedules (for general booking) ── */
+  const fetchAllSchedules = useCallback(async (docList) => {
+    setAllSchedsLoading(true);
+    await Promise.all(docList.map(doc => fetchDoctorSchedule(doc.id)));
+    setAllSchedsLoading(false);
+  }, [fetchDoctorSchedule]);
+
+  /* ── When general booking is selected and doctors are loaded, fetch all ── */
+  useEffect(() => {
+    if(bookingMode === 'general' && doctors.length > 0 && !allSchedsLoading) {
+      fetchAllSchedules(doctors);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingMode, doctors]);
+
+  /* ── Pick doctor → specific flow ── */
   const pickDoctor = (doc) => {
     setSelDoctor(doc);
-    setSelDate('');
-    setSelTime('');
+    setSelDate(''); setSelTime('');
     setStep('calendar');
-    window.scrollTo({top:0, behavior:'smooth'});
+    setSchedLoading(true);
+    fetchDoctorSchedule(doc.id).finally(() => setSchedLoading(false));
+    window.scrollTo({ top:0, behavior:'smooth' });
   };
 
-  /* ── handle date select → auto scroll to slots ── */
-  const pickDate = (ds) => {
+  /* ── When general date is picked: compute all available slots across doctors ── */
+  const pickGeneralDate = (ds) => {
     setSelDate(ds);
     setSelTime('');
+    setSelDoctor(null);
+
+    const slots = [];
+    for(const doc of doctors) {
+      const sched = doctorSchedules[doc.id]?.[ds];
+      if(!sched) continue;
+      sched.slots.forEach(slotRange => {
+        const times = generateSlotTimes(slotRange.start, slotRange.end, slotRange.duration);
+        const bookedCount = slotRange.booked || 0;
+        times.forEach((time, idx) => {
+          if(idx >= bookedCount) {
+            slots.push({ doctorId: doc.id, doctorName: doc.name, doctorColor: doc.color, time });
+          }
+        });
+      });
+    }
+    // Sort by time, deduplicate times (one entry per time, pick first available doctor)
+    const byTime = {};
+    for(const s of slots) {
+      if(!byTime[s.time]) byTime[s.time] = s;
+    }
+    const sorted = Object.values(byTime).sort((a,b)=>toMins(a.time)-toMins(b.time));
+    setGeneralSlots(sorted);
   };
 
-  /* ── handle confirm booking ── */
-  const confirmBooking = () => {
-    const id = `APT-${200 + appointments.length + 1}`;
-    const newApt = {
-      id,
-      doctorId:  selDoctor.id,
-      doctor:    selDoctor.name,
-      specialty: selDoctor.specialty,
-      date:      selDate,
-      time:      selTime,
-      reason:    form.reason,
-      status:    'scheduled',
-    };
-    setApts(prev => [newApt, ...prev]);
-    setNewAptId(id);
-    setNotifs(prev => [{
-      id: Date.now(),
-      msg: `✅ Appointment confirmed! ${selDoctor.name} on ${fmtDateLong(selDate)} at ${fmtTime(selTime)}.`,
-      type: 'success',
-    }, ...prev]);
-    setStep('success');
-    window.scrollTo({top:0, behavior:'smooth'});
+  /* ── When a general time is selected, assign the doctor ── */
+  const pickGeneralTime = (slot) => {
+    setSelTime(slot.time);
+    // Find the actual doctor object
+    const doc = doctors.find(d => d.id === slot.doctorId);
+    setSelDoctor(doc ?? null);
   };
 
-  /* ── cancel appointment ── */
-  const cancelApt = (id) => {
-    setApts(prev => prev.map(a => a.id===id ? {...a,status:'cancelled'} : a));
-    setNotifs(prev => [{
-      id: Date.now(),
-      msg: `Your appointment ${id} has been cancelled.`,
-      type: 'warn',
-    }, ...prev]);
-    if (detailApt?.id === id) setDetailApt(null);
+  const pickDate = (ds) => { setSelDate(ds); setSelTime(''); };
+
+  /* ── Available slots for specific doctor booking ── */
+  const availableSlots = useMemo(() => {
+    if(!selDoctor || !selDate || bookingMode !== 'specific') return [];
+    const sched = doctorSchedules[selDoctor.id]?.[selDate];
+    if(!sched) return [];
+    const result = [];
+    sched.slots.forEach(slotRange => {
+      const times = generateSlotTimes(slotRange.start, slotRange.end, slotRange.duration);
+      const bookedCount = slotRange.booked || 0;
+      times.forEach((time, idx) => {
+        result.push({ time, booked: idx < bookedCount });
+      });
+    });
+    return result;
+  }, [selDoctor, selDate, doctorSchedules, bookingMode]);
+
+  const currentSchedule = selDoctor ? (doctorSchedules[selDoctor.id] ?? {}) : {};
+
+  /* ── Confirm booking ── */
+  const confirmBooking = async () => {
+    setBooking(true);
+    try {
+      const res = await fetch(`${API_BASE}/appointments`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          doctor_id:        selDoctor?.id,
+          service_id:       form.service_id || null,
+          appointment_date: selDate,
+          appointment_time: selTime,
+          reason:           form.reason,
+          notes:            form.notes || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Booking failed.');
+      setNewAptId(`APT-${String(data.appointment_id).padStart(5,'0')}`);
+      setNotifs(prev=>[{
+        id: Date.now(),
+        msg: `✅ Appointment confirmed! ${selDoctor?.name} on ${fmtDateLong(selDate)} at ${fmtTime(selTime)}.`,
+        type: 'success',
+      }, ...prev]);
+      setStep('success');
+      window.scrollTo({ top:0, behavior:'smooth' });
+    } catch (err) {
+      setNotifs(prev=>[{ id:Date.now(), msg: err.message, type:'error' }, ...prev]);
+    } finally {
+      setBooking(false);
+    }
   };
 
-  /* ── reset booking flow ── */
+  /* ── Reset ── */
   const resetFlow = () => {
     setSelDoctor(null); setSelDate(''); setSelTime('');
-    setForm({name:ME.name, contact:ME.contact, email:ME.email, reason:'', notes:''});
-    setStep('doctors');
-    window.scrollTo({top:0, behavior:'smooth'});
+    setBookingMode(null);
+    setForm({ ...patientInfo, service_id:'', reason:'', notes:'' });
+    setStep('type-select');
+    setGeneralSlots([]);
+    window.scrollTo({ top:0, behavior:'smooth' });
   };
 
-  const filteredApts = aptFilter==='all' ? appointments : appointments.filter(a=>a.status===aptFilter);
+  const filteredDoctors = doctors.filter(d => d.name.toLowerCase().includes(searchDoc.toLowerCase()));
+
+  /* ── Step breadcrumb config per mode ── */
+  const breadcrumbSteps = bookingMode === 'general'
+    ? [
+        {key:'type-select', label:'1. Type'},
+        {key:'general-calendar', label:'2. Schedule'},
+        {key:'form', label:'3. Details'},
+        {key:'summary', label:'4. Confirm'},
+      ]
+    : [
+        {key:'type-select', label:'1. Type'},
+        {key:'doctors', label:'2. Doctor'},
+        {key:'calendar', label:'3. Schedule'},
+        {key:'form', label:'4. Details'},
+        {key:'summary', label:'5. Confirm'},
+      ];
+
+  const stepOrder = bookingMode === 'general'
+    ? ['type-select','general-calendar','form','summary','success']
+    : ['type-select','doctors','calendar','form','summary','success'];
 
   /* ════════════════════════════════════════════
      RENDER
@@ -363,7 +513,7 @@ export default function PatientAppointmentPage() {
     <MainLayout title="Book Appointment" subtitle="Schedule a visit with one of our doctors">
       <div className="space-y-6">
 
-        {/* ══ §1 HEADER ══ */}
+        {/* ══ HEADER ══ */}
         <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-3xl p-8 text-white relative overflow-hidden">
           <div className="absolute -top-12 -right-12 w-56 h-56 rounded-full bg-white/5"/>
           <div className="absolute bottom-0 left-1/2 w-72 h-72 rounded-full bg-white/5 -translate-x-1/2 translate-y-1/2"/>
@@ -377,202 +527,317 @@ export default function PatientAppointmentPage() {
                   <span className="text-blue-200 text-sm font-semibold">{CLINIC.name}</span>
                 </div>
                 <h1 className="text-3xl font-black leading-tight">Book an Appointment</h1>
-                <p className="text-blue-200 text-sm mt-2 max-w-lg">
-                  Select a doctor, choose an available date and time, and confirm your appointment. We'll take care of the rest.
-                </p>
+                <p className="text-blue-200 text-sm mt-2 max-w-lg">Select a doctor, choose an available date and time, and confirm your appointment.</p>
               </div>
               <div className="text-right text-sm text-blue-200 space-y-1">
                 <div className="flex items-center gap-2 justify-end"><MapPin className="w-3.5 h-3.5"/>{CLINIC.address}</div>
                 <div className="flex items-center gap-2 justify-end"><Clock className="w-3.5 h-3.5"/>{CLINIC.hours}</div>
-                <div className="flex items-center gap-2 justify-end"><Phone className="w-3.5 h-3.5"/>{CLINIC.phone}</div>
               </div>
             </div>
-
             {/* Step breadcrumb */}
-            <div className="flex items-center gap-1.5 mt-6 flex-wrap">
-              {[
-                {key:'doctors', label:'1. Doctor'},
-                {key:'calendar',label:'2. Schedule'},
-                {key:'form',    label:'3. Details'},
-                {key:'summary', label:'4. Confirm'},
-              ].map((s, i) => {
-                const steps = ['doctors','calendar','form','summary','success'];
-                const curr = steps.indexOf(step);
-                const idx  = steps.indexOf(s.key);
-                const done = curr > idx;
-                const active = curr === idx;
-                return (
-                  <React.Fragment key={s.key}>
-                    <span className={`text-xs font-bold px-3 py-1 rounded-full transition-all
-                      ${done   ? 'bg-white/20 text-white'      :
-                        active ? 'bg-white text-blue-700 shadow-sm' :
-                                 'text-blue-300'}`}>
-                      {done ? '✓ ' : ''}{s.label}
-                    </span>
-                    {i < 3 && <ChevronRight className="w-3.5 h-3.5 text-blue-400"/>}
-                  </React.Fragment>
-                );
-              })}
-            </div>
+            {step !== 'type-select' && (
+              <div className="flex items-center gap-1.5 mt-6 flex-wrap">
+                {breadcrumbSteps.map((s,i) => {
+                  const curr = stepOrder.indexOf(step);
+                  const idx  = stepOrder.indexOf(s.key);
+                  const done = curr > idx, active = curr === idx;
+                  return (
+                    <React.Fragment key={s.key}>
+                      <span className={`text-xs font-bold px-3 py-1 rounded-full transition-all
+                        ${done?'bg-white/20 text-white':active?'bg-white text-blue-700 shadow-sm':'text-blue-300'}`}>
+                        {done?'✓ ':''}{s.label}
+                      </span>
+                      {i < breadcrumbSteps.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-blue-400"/>}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
         {/* ══ NOTIFICATIONS ══ */}
         {notifs.length > 0 && (
           <div className="space-y-2">
-            {notifs.map(n => <Notif key={n.id} {...n} onClose={()=>dismissNotif(n.id)}/>)}
+            {notifs.map(n=><Notif key={n.id} {...n} onClose={()=>dismissNotif(n.id)}/>)}
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════
-            SUCCESS SCREEN
-        ══════════════════════════════════════════════ */}
-        {step === 'success' && (
-          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-10 text-center max-w-lg mx-auto">
-            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-green-100">
-              <Check className="w-10 h-10 text-green-600" strokeWidth={2.5}/>
+        {/* ══════════════════════════════════════════
+            STEP: TYPE SELECT
+        ══════════════════════════════════════════ */}
+        {step === 'type-select' && (
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-8">
+              <h2 className="text-xl font-black text-gray-900">How would you like to book?</h2>
+              <p className="text-sm text-gray-400 mt-1">Choose between selecting a specific doctor or letting the system assign one for you.</p>
             </div>
-            <h2 className="text-2xl font-black text-gray-900">Appointment Booked!</h2>
-            <p className="text-gray-500 text-sm mt-2">Your appointment has been scheduled. Please arrive 15 minutes early.</p>
-            <div className="bg-gray-50 rounded-2xl p-5 mt-6 text-left space-y-3 border border-gray-100">
-              {[
-                ['Appointment ID', newAptId],
-                ['Doctor',         selDoctor?.name],
-                ['Specialty',      selDoctor?.specialty],
-                ['Date',           selDate ? fmtDateLong(selDate) : ''],
-                ['Time',           selTime ? fmtTime(selTime) : ''],
-                ['Reason',         form.reason],
-              ].map(([l,v])=>(
-                <div key={l} className="flex justify-between gap-4 text-sm">
-                  <span className="text-gray-400 font-semibold">{l}</span>
-                  <span className="text-gray-800 font-bold text-right">{v||'—'}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+              {/* General Appointment */}
+              <button
+                onClick={() => { setBookingMode('general'); setStep('general-calendar'); window.scrollTo({top:0,behavior:'smooth'}); }}
+                className="group relative bg-white border-2 border-gray-100 rounded-3xl p-7 text-left hover:border-indigo-300 hover:shadow-xl hover:shadow-indigo-50 transition-all duration-200 flex flex-col gap-4"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+                  <Shuffle className="w-7 h-7 text-indigo-600"/>
                 </div>
-              ))}
+                <div>
+                  <p className="text-base font-black text-gray-900">General Appointment</p>
+                  <p className="text-sm text-gray-400 mt-1 leading-relaxed">
+                    Don't have a preferred doctor? Pick a date and time — the system will automatically assign an available doctor for you.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-500 mt-auto">
+                  Get started <ArrowRight className="w-3.5 h-3.5"/>
+                </div>
+                {/* Badge */}
+                <span className="absolute top-4 right-4 text-[10px] font-bold bg-indigo-100 text-indigo-600 px-2.5 py-1 rounded-full">
+                  Recommended
+                </span>
+              </button>
+
+              {/* Specific Doctor */}
+              <button
+                onClick={() => { setBookingMode('specific'); setStep('doctors'); window.scrollTo({top:0,behavior:'smooth'}); }}
+                className="group bg-white border-2 border-gray-100 rounded-3xl p-7 text-left hover:border-blue-300 hover:shadow-xl hover:shadow-blue-50 transition-all duration-200 flex flex-col gap-4"
+              >
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
+                  <UserCheck className="w-7 h-7 text-blue-600"/>
+                </div>
+                <div>
+                  <p className="text-base font-black text-gray-900">Choose a Doctor</p>
+                  <p className="text-sm text-gray-400 mt-1 leading-relaxed">
+                    Already have a preferred doctor? Browse our available doctors and book directly with the one you trust.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-500 mt-auto">
+                  Browse doctors <ArrowRight className="w-3.5 h-3.5"/>
+                </div>
+              </button>
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={resetFlow}
-                className="flex-1 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-200">
-                Book Another
-              </button>
-              <button onClick={()=>setStep('doctors')}
-                className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-50 transition-all">
-                View My Appointments
-              </button>
+
+            {/* Info tip */}
+            <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-2xl text-xs text-blue-700 mt-5">
+              <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5"/>
+              <p><strong>Track your appointments</strong> in your Medical Records page. You can view upcoming schedules, consultation history, and prescriptions there.</p>
             </div>
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════
-            §2 DOCTOR SELECTION
-        ══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════
+            STEP: GENERAL CALENDAR + TIME PICKER
+        ══════════════════════════════════════════ */}
+        {step === 'general-calendar' && (
+          <div className="space-y-5">
+            <button onClick={() => { setStep('type-select'); setSelDate(''); setSelTime(''); setBookingMode(null); }}
+              className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-indigo-600 transition-colors">
+              <ChevronLeft className="w-4 h-4"/> Back
+            </button>
+
+            {/* Info banner */}
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-start gap-3 text-sm text-indigo-700">
+              <Shuffle className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5"/>
+              <div>
+                <p className="font-bold">General Appointment</p>
+                <p className="text-xs mt-0.5 text-indigo-500">Pick a date and time below. The system will automatically assign you the first available doctor for that slot.</p>
+              </div>
+            </div>
+
+            {allSchedsLoading && (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-6 h-6 text-indigo-400 animate-spin"/>
+                <span className="ml-3 text-sm text-gray-400 font-medium">Loading all schedules…</span>
+              </div>
+            )}
+
+            {!allSchedsLoading && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {/* General Calendar */}
+                <div>
+                  <h3 className="text-sm font-black text-gray-800 mb-3">Select a Date</h3>
+                  <GeneralCalendar
+                    allDoctorSchedules={doctorSchedules}
+                    selectedDate={selDate}
+                    onSelect={pickGeneralDate}
+                  />
+                </div>
+
+                {/* Time Slots */}
+                <div>
+                  <h3 className="text-sm font-black text-gray-800 mb-3">
+                    {selDate ? `Available Times — ${fmtDateLong(selDate)}` : 'Choose a date first'}
+                  </h3>
+
+                  {!selDate ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
+                      <Calendar className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
+                      <p className="text-sm text-gray-400 font-medium">Select a date to see available slots.</p>
+                    </div>
+                  ) : generalSlots.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
+                      <XCircle className="w-10 h-10 text-red-200 mx-auto mb-3"/>
+                      <p className="text-sm text-gray-500 font-bold">No available slots</p>
+                      <p className="text-xs text-gray-400 mt-1">No doctors are available on this date. Please choose another date.</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <p className="text-xs text-gray-400 font-semibold mb-4">
+                        {generalSlots.length} slot{generalSlots.length !== 1 ? 's' : ''} available across {new Set(generalSlots.map(s=>s.doctorId)).size} doctor{new Set(generalSlots.map(s=>s.doctorId)).size !== 1 ? 's' : ''}
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {generalSlots.map(slot => {
+                          const isSel = selTime === slot.time && selDoctor?.id === slot.doctorId;
+                          return (
+                            <button key={`${slot.doctorId}-${slot.time}`}
+                              onClick={() => pickGeneralTime(slot)}
+                              className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all
+                                ${isSel
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200'
+                                  : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-400 hover:text-indigo-600'}`}>
+                              {fmtTime(slot.time)}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Show which doctor will be assigned */}
+                      {selTime && selDoctor && (
+                        <div className="mt-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${DOC_COLOR_CFG[selDoctor.color].avatar}`}>
+                            {selDoctor.name.split(' ').filter(Boolean).slice(-2).map(n=>n[0]).join('')}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-indigo-500 font-semibold">Assigned Doctor</p>
+                            <p className="text-sm font-black text-indigo-800">{selDoctor.name}</p>
+                          </div>
+                          <Check className="w-4 h-4 text-indigo-500 flex-shrink-0"/>
+                        </div>
+                      )}
+
+                      {selTime && selDoctor && (
+                        <div className="mt-4">
+                          <button onClick={() => setStep('form')}
+                            className="w-full py-3 rounded-2xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200">
+                            Continue with {fmtTime(selTime)} →
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════
+            STEP: DOCTOR SELECTION (specific)
+        ══════════════════════════════════════════ */}
         {step === 'doctors' && (
           <div className="space-y-5">
-            {/* Filters */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300"/>
-                <input value={searchDoc} onChange={e=>setSearchDoc(e.target.value)}
-                  placeholder="Search doctor or specialty..."
-                  className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-300"/>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {specialties.map(s => (
-                  <button key={s} onClick={()=>setFilterSpec(s)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all
-                      ${filterSpec===s ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
-                    {s}
-                  </button>
-                ))}
-              </div>
+            <button onClick={() => { setStep('type-select'); setBookingMode(null); }}
+              className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors">
+              <ChevronLeft className="w-4 h-4"/> Back
+            </button>
+
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300"/>
+              <input value={searchDoc} onChange={e=>setSearchDoc(e.target.value)}
+                placeholder="Search doctor..."
+                className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-300"/>
             </div>
 
-            {/* Doctor cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredDoctors.map(doc => {
-                const c = DOC_COLORS[doc.color];
-                return (
-                  <div key={doc.id}
-                    className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all p-5 flex flex-col gap-4">
-                    {/* Avatar + info */}
-                    <div className="flex items-center gap-3">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black flex-shrink-0 ${c.avatar}`}>
-                        {doc.name.split(' ').map(n=>n[0]).join('').slice(1,3)}
+            {docLoading && (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin"/>
+                <span className="ml-3 text-sm text-gray-400 font-medium">Loading doctors…</span>
+              </div>
+            )}
+            {!docLoading && docError && (
+              <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+                <XCircle className="w-5 h-5 flex-shrink-0"/>
+                <span>Could not load doctors: <strong>{docError}</strong></span>
+                <button onClick={fetchDoctors} className="ml-auto text-xs underline font-semibold">Retry</button>
+              </div>
+            )}
+            {!docLoading && !docError && filteredDoctors.length === 0 && (
+              <div className="text-center py-16">
+                <Stethoscope className="w-10 h-10 mx-auto text-gray-200 mb-2"/>
+                <p className="text-sm text-gray-400 font-medium">No doctors found</p>
+              </div>
+            )}
+            {!docLoading && !docError && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredDoctors.map(doc => {
+                  const c = DOC_COLOR_CFG[doc.color];
+                  const initials = doc.name.split(' ').filter(Boolean).slice(-2).map(n=>n[0]).join('');
+                  return (
+                    <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all p-5 flex flex-col gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black flex-shrink-0 ${c.avatar}`}>
+                          {initials}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-black text-gray-900 text-sm leading-tight">{doc.name}</p>
+                          {doc.license && <p className="text-xs text-gray-400 mt-0.5">License: {doc.license}</p>}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-black text-gray-900 text-sm leading-tight">{doc.name}</p>
-                        <span className={`inline-flex items-center text-xs font-bold px-2 py-0.5 rounded-lg border mt-1 ${c.tag}`}>
-                          {doc.specialty}
-                        </span>
-                      </div>
+                      <button onClick={()=>pickDoctor(doc)}
+                        className={`w-full py-2.5 rounded-xl text-white text-sm font-bold transition-all shadow-sm ${c.btn}`}>
+                        Select Doctor
+                      </button>
                     </div>
-
-                    <p className="text-xs text-gray-400 leading-relaxed">{doc.bio}</p>
-
-                    {/* Stats */}
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1 font-semibold">
-                        <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400"/>{doc.rating}
-                      </span>
-                      <span className="text-gray-200">|</span>
-                      <span>{doc.patients.toLocaleString()} patients</span>
-                      <span className="text-gray-200">|</span>
-                      <span>{doc.workDays.map(d=>DAYS[d]).join(', ')}</span>
-                    </div>
-
-                    <button onClick={()=>pickDoctor(doc)}
-                      className={`w-full py-2.5 rounded-xl text-white text-sm font-bold transition-all shadow-sm ${c.btn}`}>
-                      Select Doctor
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════
-            §3 + §4 CALENDAR + TIME SLOTS
-        ══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════
+            STEP: CALENDAR + TIME (specific doctor)
+        ══════════════════════════════════════════ */}
         {step === 'calendar' && selDoctor && (
           <div className="space-y-5">
-            {/* Back */}
             <button onClick={()=>{setStep('doctors');setSelDate('');setSelTime('');}}
               className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors">
               <ChevronLeft className="w-4 h-4"/> Back to Doctors
             </button>
 
-            {/* Selected doctor summary */}
-            <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4`}>
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black flex-shrink-0 ${DOC_COLORS[selDoctor.color].avatar}`}>
-                {selDoctor.name.split(' ').map(n=>n[0]).join('').slice(1,3)}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black flex-shrink-0 ${DOC_COLOR_CFG[selDoctor.color].avatar}`}>
+                {selDoctor.name.split(' ').filter(Boolean).slice(-2).map(n=>n[0]).join('')}
               </div>
               <div className="flex-1">
                 <p className="font-black text-gray-900">{selDoctor.name}</p>
-                <p className="text-sm text-gray-500">{selDoctor.specialty}</p>
-                <p className="text-xs text-gray-400 mt-0.5">Available: {selDoctor.workDays.map(d=>DAYS[d]).join(', ')}</p>
+                {selDoctor.license && <p className="text-xs text-gray-400 mt-0.5">License: {selDoctor.license}</p>}
               </div>
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-yellow-600 bg-yellow-50 px-3 py-1.5 rounded-full">
-                <Star className="w-3.5 h-3.5 fill-yellow-400 text-yellow-400"/> {selDoctor.rating}
-              </div>
+              {schedLoading && <Loader2 className="w-4 h-4 text-blue-400 animate-spin"/>}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              {/* §3 Calendar */}
               <div>
                 <h3 className="text-sm font-black text-gray-800 mb-3">Select a Date</h3>
-                <MiniCalendar doctor={selDoctor} selectedDate={selDate} onSelect={pickDate}/>
+                <MiniCalendar
+                  doctorSchedule={currentSchedule}
+                  selectedDate={selDate}
+                  onSelect={pickDate}
+                />
               </div>
-
-              {/* §4 Time Slots */}
               <div>
                 <h3 className="text-sm font-black text-gray-800 mb-3">
                   {selDate ? `Available Times — ${fmtDateLong(selDate)}` : 'Choose a date first'}
                 </h3>
-
                 {!selDate ? (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
                     <Calendar className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
                     <p className="text-sm text-gray-400 font-medium">Select a date on the calendar to see available time slots.</p>
+                  </div>
+                ) : schedLoading ? (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-blue-400 animate-spin"/>
+                    <span className="ml-2 text-sm text-gray-400">Loading slots…</span>
                   </div>
                 ) : availableSlots.length === 0 ? (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
@@ -583,25 +848,18 @@ export default function PatientAppointmentPage() {
                 ) : (
                   <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                     <p className="text-xs text-gray-400 font-semibold mb-4">
-                      {availableSlots.length} slot{availableSlots.length!==1?'s':''} available · 30 minutes each
+                      {availableSlots.filter(s=>!s.booked).length} slot{availableSlots.filter(s=>!s.booked).length!==1?'s':''} available
                     </p>
                     <div className="grid grid-cols-3 gap-2">
-                      {selDoctor.slots.map(slot => {
-                        const booked = (BOOKED_SLOTS[`${selDoctor.id}_${selDate}`]||[]).includes(slot);
-                        const isSel  = selTime === slot;
+                      {availableSlots.map(({ time, booked }) => {
+                        const isSel = selTime === time;
                         return (
-                          <button
-                            key={slot}
-                            disabled={booked}
-                            onClick={()=>setSelTime(slot)}
-                            className={`
-                              py-2.5 rounded-xl text-sm font-bold border-2 transition-all
-                              ${isSel   ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' :
-                                booked  ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed line-through' :
-                                          'bg-white text-gray-700 border-gray-200 hover:border-blue-400 hover:text-blue-600'}
-                            `}
-                          >
-                            {fmtTime(slot)}
+                          <button key={time} disabled={booked} onClick={()=>setSelTime(time)}
+                            className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all
+                              ${isSel    ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200'
+                              : booked   ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed line-through'
+                                         : 'bg-white text-gray-700 border-gray-200 hover:border-blue-400 hover:text-blue-600'}`}>
+                            {fmtTime(time)}
                             {booked && <span className="block text-[9px] font-normal">Booked</span>}
                           </button>
                         );
@@ -609,8 +867,7 @@ export default function PatientAppointmentPage() {
                     </div>
                     {selTime && (
                       <div className="mt-5">
-                        <button
-                          onClick={()=>setStep('form')}
+                        <button onClick={()=>setStep('form')}
                           className="w-full py-3 rounded-2xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-all shadow-md shadow-blue-200">
                           Continue with {fmtTime(selTime)} →
                         </button>
@@ -623,32 +880,36 @@ export default function PatientAppointmentPage() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════
-            §5 APPOINTMENT DETAILS FORM
-        ══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════
+            STEP: APPOINTMENT DETAILS FORM
+        ══════════════════════════════════════════ */}
         {step === 'form' && (
           <div className="space-y-5 max-w-2xl mx-auto">
-            <button onClick={()=>setStep('calendar')}
+            <button onClick={() => setStep(bookingMode === 'general' ? 'general-calendar' : 'calendar')}
               className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors">
               <ChevronLeft className="w-4 h-4"/> Back to Schedule
             </button>
 
-            {/* Booking summary strip */}
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex flex-wrap gap-4 text-sm">
+            <div className={`border rounded-2xl p-4 flex flex-wrap gap-4 text-sm ${bookingMode === 'general' ? 'bg-indigo-50 border-indigo-100' : 'bg-blue-50 border-blue-100'}`}>
               <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-blue-500"/><span className="font-bold text-blue-800">{selDoctor?.name}</span>
+                <User className={`w-4 h-4 ${bookingMode === 'general' ? 'text-indigo-500' : 'text-blue-500'}`}/>
+                <span className={`font-bold ${bookingMode === 'general' ? 'text-indigo-800' : 'text-blue-800'}`}>{selDoctor?.name}</span>
+                {bookingMode === 'general' && (
+                  <span className="text-[10px] font-bold bg-indigo-200 text-indigo-700 px-2 py-0.5 rounded-full">Auto-assigned</span>
+                )}
               </div>
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-blue-500"/><span className="font-bold text-blue-800">{selDate ? fmtDateLong(selDate) : ''}</span>
+                <Calendar className={`w-4 h-4 ${bookingMode === 'general' ? 'text-indigo-500' : 'text-blue-500'}`}/>
+                <span className={`font-bold ${bookingMode === 'general' ? 'text-indigo-800' : 'text-blue-800'}`}>{selDate ? fmtDateLong(selDate) : ''}</span>
               </div>
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-blue-500"/><span className="font-bold text-blue-800">{selTime ? fmtTime(selTime) : ''}</span>
+                <Clock className={`w-4 h-4 ${bookingMode === 'general' ? 'text-indigo-500' : 'text-blue-500'}`}/>
+                <span className={`font-bold ${bookingMode === 'general' ? 'text-indigo-800' : 'text-blue-800'}`}>{selTime ? fmtTime(selTime) : ''}</span>
               </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
               <h2 className="text-lg font-black text-gray-900">Your Appointment Details</h2>
-
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Full Name <span className="text-red-400">*</span></label>
@@ -659,68 +920,74 @@ export default function PatientAppointmentPage() {
                   <input value={form.contact} onChange={e=>setF('contact',e.target.value)} className={inputCls}/>
                 </div>
               </div>
-
               <div>
                 <label className={labelCls}>Email Address</label>
                 <input value={form.email} onChange={e=>setF('email',e.target.value)} type="email" className={inputCls}/>
               </div>
-
+              <div>
+                <label className={labelCls}>Service <span className="text-red-400">*</span></label>
+                <select value={form.service_id} onChange={e=>setF('service_id', e.target.value)} className={inputCls}>
+                  <option value="">— Select a service —</option>
+                  {services.map(s => (
+                    <option key={s.service_id} value={s.service_id}>
+                      {s.service_name}{s.price ? ` — ₱${parseFloat(s.price).toLocaleString()}` : ''}
+                      {s.duration_minutes ? ` (${s.duration_minutes} mins)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className={labelCls}>Reason for Visit / Symptoms <span className="text-red-400">*</span></label>
                 <textarea value={form.reason} onChange={e=>setF('reason',e.target.value)}
                   rows={3} placeholder="Briefly describe your symptoms or reason for visit..."
                   className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-300 transition-all resize-none"/>
               </div>
-
               <div>
                 <label className={labelCls}>Notes for Doctor <span className="text-gray-300 font-normal">(Optional)</span></label>
                 <textarea value={form.notes} onChange={e=>setF('notes',e.target.value)}
                   rows={2} placeholder="Any additional information or special requests..."
                   className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-300 transition-all resize-none"/>
               </div>
-
-              <button
-                disabled={!form.name || !form.contact || !form.reason}
-                onClick={()=>setStep('summary')}
-                className="w-full py-3.5 rounded-2xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-all shadow-md shadow-blue-200 disabled:opacity-40 disabled:cursor-not-allowed">
+              <button disabled={!form.name||!form.contact||!form.reason||!form.service_id} onClick={()=>setStep('summary')}
+                className={`w-full py-3.5 rounded-2xl text-white font-bold text-sm transition-all shadow-md disabled:opacity-40 disabled:cursor-not-allowed
+                  ${bookingMode === 'general'
+                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}>
                 Review Appointment →
               </button>
             </div>
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════
-            §6 APPOINTMENT SUMMARY
-        ══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════
+            STEP: SUMMARY
+        ══════════════════════════════════════════ */}
         {step === 'summary' && (
           <div className="max-w-xl mx-auto space-y-5">
             <button onClick={()=>setStep('form')}
               className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors">
               <ChevronLeft className="w-4 h-4"/> Back to Details
             </button>
-
             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
               <div className="text-center mb-7">
-                <div className="w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto mb-3">
-                  <FileText className="w-7 h-7 text-blue-600"/>
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${bookingMode === 'general' ? 'bg-indigo-100' : 'bg-blue-100'}`}>
+                  <FileText className={`w-7 h-7 ${bookingMode === 'general' ? 'text-indigo-600' : 'text-blue-600'}`}/>
                 </div>
                 <h2 className="text-xl font-black text-gray-900">Confirm Your Appointment</h2>
                 <p className="text-sm text-gray-400 mt-1">Please review before confirming</p>
               </div>
-
-              {/* Summary rows */}
               <div className="space-y-3 bg-gray-50 rounded-2xl p-5 border border-gray-100">
                 {[
-                  ['Doctor',   selDoctor?.name,             User    ],
-                  ['Specialty',selDoctor?.specialty,        Stethoscope],
-                  ['Date',     selDate?fmtDateLong(selDate):'', Calendar],
-                  ['Time',     selTime?fmtTime(selTime):'', Clock   ],
-                  ['Patient',  form.name,                   User    ],
-                  ['Contact',  form.contact,                Phone   ],
-                  ['Email',    form.email,                  Mail    ],
-                  ['Reason',   form.reason,                 FileText],
-                  ...(form.notes ? [['Notes', form.notes, FileText]] : []),
-                ].map(([l,v,Icon])=>(
+                  ['Doctor',  selDoctor?.name + (bookingMode === 'general' ? ' (Auto-assigned)' : ''), User    ],
+                  ['Date',    selDate?fmtDateLong(selDate):'',                                          Calendar],
+                  ['Time',    selTime?fmtTime(selTime):'',                                              Clock   ],
+                  ['Service', services.find(s=>String(s.service_id)===String(form.service_id))?.service_name ?? '—', FileText],
+                  ['Patient', form.name,                                                                User    ],
+                  ['Contact', form.contact,                                                             Phone   ],
+                  ['Email',   form.email,                                                               Mail    ],
+                  ['Reason',  form.reason,                                                              FileText],
+                  ...(form.notes?[['Notes',form.notes,FileText]]:[]),
+                ].map(([l,v,Icon]) => (
                   <div key={l} className="flex items-start gap-3 text-sm">
                     <div className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
                       <Icon className="w-3.5 h-3.5 text-gray-400"/>
@@ -732,137 +999,62 @@ export default function PatientAppointmentPage() {
                   </div>
                 ))}
               </div>
-
               <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2 mt-4 text-xs text-amber-700">
                 <Info className="w-4 h-4 flex-shrink-0 mt-0.5"/>
                 Please arrive 15 minutes before your scheduled time. Bring a valid ID and any previous medical records.
               </div>
-
               <div className="flex gap-3 mt-6">
                 <button onClick={resetFlow}
                   className="flex-1 py-3 rounded-2xl border-2 border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition-all">
                   Cancel
                 </button>
-                <button onClick={confirmBooking}
-                  className="flex-1 py-3 rounded-2xl bg-green-600 text-white font-bold text-sm hover:bg-green-700 transition-all shadow-md shadow-green-200">
-                  ✓ Confirm Appointment
+                <button onClick={confirmBooking} disabled={booking}
+                  className="flex-1 py-3 rounded-2xl bg-green-600 text-white font-bold text-sm hover:bg-green-700 transition-all shadow-md shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                  {booking ? <><Loader2 className="w-4 h-4 animate-spin"/> Booking…</> : '✓ Confirm Appointment'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════
-            §7 + §8 MY APPOINTMENTS
-        ══════════════════════════════════════════════ */}
-        {(step === 'doctors' || step === 'success') && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-blue-600"/> My Appointments
-              </h2>
-              {/* Filter tabs */}
-              <div className="flex gap-1.5 flex-wrap">
-                {['all','scheduled','completed','cancelled'].map(f=>(
-                  <button key={f} onClick={()=>setAptFilter(f)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all capitalize
-                      ${aptFilter===f ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
-                    {f==='all'?'All':f}
-                  </button>
-                ))}
-              </div>
+        {/* ══════════════════════════════════════════
+            STEP: SUCCESS
+        ══════════════════════════════════════════ */}
+        {step === 'success' && (
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-10 text-center max-w-lg mx-auto">
+            <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-5 shadow-lg shadow-green-100">
+              <Check className="w-10 h-10 text-green-600" strokeWidth={2.5}/>
             </div>
-
-            {filteredApts.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
-                <Calendar className="w-10 h-10 text-gray-200 mx-auto mb-3"/>
-                <p className="text-sm text-gray-400 font-medium">No appointments found</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredApts.map(apt => {
-                  const s    = STATUS_CFG[apt.status] || STATUS_CFG.scheduled;
-                  const d    = new Date(apt.date+'T00:00:00');
-                  const past = apt.date < TODAY;
-                  return (
-                    <div key={apt.id}
-                      className={`bg-white rounded-2xl border shadow-sm p-5 flex items-center gap-4 flex-wrap transition-all hover:shadow-md
-                        ${apt.id===newAptId ? 'border-green-300 bg-green-50/30' : 'border-gray-100'}`}>
-                      {/* Date block */}
-                      <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex flex-col items-center justify-center">
-                        <span className="text-xs font-bold text-blue-500 uppercase">{MONTHS[d.getMonth()].slice(0,3)}</span>
-                        <span className="text-xl font-black text-blue-700 leading-none">{d.getDate()}</span>
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-black text-gray-900 text-sm">{apt.doctor}</p>
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${s.bg} ${s.text}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`}/>
-                            {s.label}
-                          </span>
-                          {apt.id===newAptId && (
-                            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">New</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-400 mt-0.5">{apt.specialty}</p>
-                        <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
-                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/>{fmtDateLong(apt.date)}</span>
-                          <span className="flex items-center gap-1"><Clock className="w-3 h-3"/>{fmtTime(apt.time)}</span>
-                        </div>
-                        {apt.reason && <p className="text-xs text-gray-400 mt-1 italic">"{apt.reason}"</p>}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button onClick={()=>setDetailApt(apt===detailApt?null:apt)}
-                          className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-all"
-                          title="View details">
-                          <Eye className="w-4 h-4"/>
-                        </button>
-                        {apt.status==='scheduled' && (
-                          <button onClick={()=>cancelApt(apt.id)}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-bold hover:bg-red-50 transition-all"
-                            title="Cancel appointment">
-                            <X className="w-3.5 h-3.5"/> Cancel
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            <h2 className="text-2xl font-black text-gray-900">Appointment Booked!</h2>
+            <p className="text-gray-500 text-sm mt-2">Your appointment has been scheduled. Please arrive 15 minutes early.</p>
+            {bookingMode === 'general' && (
+              <div className="mt-3 inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold px-3 py-1.5 rounded-full">
+                <Shuffle className="w-3.5 h-3.5"/> Doctor was auto-assigned by the system
               </div>
             )}
-
-            {/* Detail panel */}
-            {detailApt && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 relative">
-                <button onClick={()=>setDetailApt(null)}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-gray-200 transition-all">
-                  <X className="w-4 h-4"/>
-                </button>
-                <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2">
-                  <Info className="w-4 h-4 text-blue-500"/> Appointment Details
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  {[
-                    ['Appointment ID',detailApt.id],
-                    ['Doctor',        detailApt.doctor],
-                    ['Specialty',     detailApt.specialty],
-                    ['Date',          fmtDateLong(detailApt.date)],
-                    ['Time',          fmtTime(detailApt.time)],
-                    ['Status',        STATUS_CFG[detailApt.status]?.label],
-                    ['Reason',        detailApt.reason],
-                  ].map(([l,v])=>(
-                    <div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{l}</p>
-                      <p className="font-semibold text-gray-800 mt-0.5">{v||'—'}</p>
-                    </div>
-                  ))}
+            <div className="bg-gray-50 rounded-2xl p-5 mt-6 text-left space-y-3 border border-gray-100">
+              {[
+                ['Appointment ID', newAptId],
+                ['Doctor',         selDoctor?.name],
+                ['Date',           selDate ? fmtDateLong(selDate) : ''],
+                ['Time',           selTime ? fmtTime(selTime) : ''],
+                ['Service',        services.find(s=>String(s.service_id)===String(form.service_id))?.service_name ?? '—'],
+                ['Reason',         form.reason],
+              ].map(([l,v]) => (
+                <div key={l} className="flex justify-between gap-4 text-sm">
+                  <span className="text-gray-400 font-semibold">{l}</span>
+                  <span className="text-gray-800 font-bold text-right">{v||'—'}</span>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={resetFlow} className="flex-1 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-200">
+                Book Another
+              </button>
+              <button onClick={()=>setStep('type-select')} className="flex-1 py-3 rounded-2xl border border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-50 transition-all">
+                Done
+              </button>
+            </div>
           </div>
         )}
 

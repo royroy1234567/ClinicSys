@@ -9,20 +9,20 @@ import ClinicSysLanding from './Landing';
 import GoogleCallback from './components/layouts/Googlecallback';
 
 import AdminDashboard from './manager/ManagerDashboard';
-import AdminAccManagament from './manager/ManagerUserManagement';
 import DoctorsPage from './manager/ManagerDoctorsPage';
 import PatientsPage from './manager/ManagerPatientsPage';
 import AppointmentsPage from './manager/ManagerAppointmentsPage';
 import ActivityLogs from './manager/ManagerActivityLogs';
 import AdminSettings from './manager/ManagerSettings';
 import ServiceManagement from './manager/ManagerServiceManagement';
+import AdminAccManagament from './manager/ManagerUserManagement';
 
 import StaffDashboard from './staff/StaffDashboard';
 import StaffAppointments from './staff/StaffAppointments';
 import QueuePage from './staff/StaffQueue';
-import StaffPatient from './staff/StaffPatient';
 import StaffDoctor from './staff/StaffDoctor';
 import StaffSettings from './staff/StaffSettings';
+import StaffPOS from './staff/StaffPOS';
 
 import DoctorDashboard from './doctor/DoctorDashboard';
 import SchedulePage from './doctor/DoctorSchedule';
@@ -34,8 +34,11 @@ import DoctorSettings from './doctor/DoctorsSettings';
 import PatientDashboard from './patient/PatientDashboard';
 import PatientAppointments from './patient/PatientAppointment';
 import MedicalRecordsPage from './patient/PatientsMedicalRecord';
-
 import PatientSettings from './patient/PatientSettings';
+
+import AdminAcc from './admin/AdminUserManagement'
+import AdminActLogs from './admin/AdminActivityLogs';
+import AdminAccDashboard from './admin/AdminDashboard';
 
 import './App.css';
 import './index.css';
@@ -95,6 +98,7 @@ const DashboardRouter = () => {
 
   switch (user?.role) {
     case 'manager': return <AdminDashboard />;
+    case 'admin':   return <AdminAccDashboard />;
     case 'staff':   return <StaffDashboard />;
     case 'doctor':  return <DoctorDashboard />;
     case 'patient': return <PatientDashboard />;
@@ -158,11 +162,18 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={['staff']} />}>
             <Route path="/staff-appointments" element={<StaffAppointments />} />
             <Route path="/queue"              element={<QueuePage />} />
-            <Route path="/staff-patients"     element={<StaffPatient />} />
             <Route path="/staff-doctors"      element={<StaffDoctor />} />
             <Route path="/staff-settings"     element={<StaffSettings />} />
+            <Route path="/pos"                element={<StaffPOS />} />
           </Route>
 
+
+  {/*------Account Administration for staff------*/}
+  <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            <Route path="/acc-management" element={<AdminAcc />} />
+            <Route path="/admin-activity" element={<AdminActLogs />} />
+
+            </Route>
           {/* ── 404 ── */}
           <Route path="*" element={<Navigate to="/" replace />} />
 

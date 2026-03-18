@@ -1,22 +1,18 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
   User, Calendar, Clock, CheckCircle2, XCircle, AlertCircle,
   Plus, Trash2, Save, Edit, ChevronLeft, ChevronRight,
-  Stethoscope, CalendarClock, Ban, Info, Check,
-  RefreshCw, Activity, Timer, Users, Repeat, X,
+  Stethoscope, CalendarClock, Info, Check,
+  RefreshCw, Activity, Timer, Users, Repeat, X, Loader2,
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
+import { useAuth } from '../context/AuthContext';
+import axios from 'axios';
 
-/* ═══════════════════════════════════════════════════
-   DEMO DATA
-═══════════════════════════════════════════════════ */
-const DOCTOR = {
-  id: 'DR-0012', name: 'Dr. Sarah Smith',
-  specialty: 'General Medicine', status: 'available', avatar: 'SS',
-};
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
 
 const STATUS_CFG = {
   available: { label:'Available', dot:'bg-emerald-500', text:'text-emerald-700', bg:'bg-emerald-50',  border:'border-emerald-200' },
@@ -25,45 +21,57 @@ const STATUS_CFG = {
 };
 
 const SLOT_DURATIONS = [15, 20, 30, 45, 60];
-const BLOCK_REASONS  = ['Personal Leave','Holiday','Medical Conference','Emergency Leave','Training / Seminar','Sick Leave','Other'];
 
 const today    = new Date();
 const pad2     = (n) => String(n).padStart(2,'0');
 const todayISO = `${today.getFullYear()}-${pad2(today.getMonth()+1)}-${pad2(today.getDate())}`;
 const isoOf    = (y,m,d) => `${y}-${pad2(m)}-${pad2(d)}`;
+const isPast   = (iso) => iso < todayISO;
 
-const seedDate = (offset) => {
-  const d = new Date(today); d.setDate(today.getDate()+offset);
-  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const fmtDate  = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
 };
 
-const INITIAL_SCHEDULE = {
-  [seedDate(1)]: { slots:[{id:1,start:'08:00',end:'10:00',duration:30,maxPts:4,booked:2},{id:2,start:'13:00',end:'16:00',duration:30,maxPts:6,booked:3}], blocked:false,blockReason:'',blockFull:false,blockedRanges:[],repeat:false,repeatWeeks:4 },
-  [seedDate(2)]: { slots:[{id:1,start:'09:00',end:'12:00',duration:30,maxPts:6,booked:6}], blocked:false,blockReason:'',blockFull:false,blockedRanges:[],repeat:false,repeatWeeks:4 },
-  [seedDate(5)]: { slots:[], blocked:true,blockReason:'Medical Conference',blockFull:true,blockedRanges:[],repeat:false,repeatWeeks:4 },
-  [seedDate(7)]: { slots:[{id:1,start:'08:00',end:'11:00',duration:20,maxPts:9,booked:1}], blocked:false,blockReason:'',blockFull:false,blockedRanges:[{id:1,start:'11:00',end:'13:00',reason:'Personal errand'}],repeat:false,repeatWeeks:4 },
-};
-
-/* ═══════════════════════════════════════════════════
-   HELPERS
-═══════════════════════════════════════════════════ */
 const toMins    = (t) => { if(!t) return 0; const[h,m]=t.split(':').map(Number); return h*60+m; };
-const diffMin   = (s,e) => Math.max(0,toMins(e)-toMins(s));
+const diffMin   = (s,e) => Math.max(0, toMins(e) - toMins(s));
 const to12      = (t) => { if(!t) return '—'; const[h,m]=t.split(':').map(Number); return `${h%12||12}:${pad2(m)} ${h>=12?'PM':'AM'}`; };
-const slotCount = (s) => s.duration ? Math.floor(diffMin(s.start,s.end)/s.duration) : 0;
-const isPast    = (iso) => iso < todayISO;
-
-const fmtDate  = (iso) => { if(!iso) return '—'; const d=new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}); };
+// Generate all slot start times for a range, skipping 12:00–13:00 lunch
+const generateSlotTimes = (start, end, duration) => {
+  if (!duration) return [];
+  const times = [];
+  let cur = toMins(start);
+  const endM = toMins(end);
+  while (cur + duration <= endM) {
+    const slotEnd = cur + duration;
+    // Skip if the slot overlaps lunch (12:00–13:00 = 720–780)
+    const overlapsLunch = cur < 780 && slotEnd > 720;
+    if (!overlapsLunch) {
+      times.push(cur);
+    } else if (cur < 720) {
+      // Slot starts before lunch but would overlap — stop before lunch
+      // (don't add this slot, advance to after lunch)
+    }
+    // Jump over lunch if we're at or before it
+    if (cur < 780 && cur + duration > 720 && cur < 720) {
+      cur = 780; // jump to 1:00 PM
+    } else {
+      cur += duration;
+    }
+  }
+  return times;
+};
+const slotCount = (s) => generateSlotTimes(s.start, s.end, s.duration).length;
 
 const dateStatus = (iso, schedule) => {
   const s = schedule[iso];
   if (!s) return 'none';
-  if (s.blocked && s.blockFull) return 'blocked';
-  const total  = s.slots.reduce((a,sl)=>a+slotCount(sl),0);
-  const booked = s.slots.reduce((a,sl)=>a+(sl.booked||0),0);
-  if (total===0) return 'none';
-  if (booked>=total) return 'full';
-  if (booked>0) return 'partial';
+  const total  = s.slots.reduce((a,sl) => a + slotCount(sl), 0);
+  const booked = s.slots.reduce((a,sl) => a + (sl.booked||0), 0);
+  if (total === 0) return 'none';
+  if (booked >= total) return 'full';
+  if (booked > 0) return 'partial';
   return 'available';
 };
 
@@ -71,14 +79,13 @@ const DATE_STATUS_STYLE = {
   available:{ bg:'bg-emerald-500', text:'text-white',      dot:'🟢', label:'Available'    },
   full:     { bg:'bg-red-500',     text:'text-white',      dot:'🔴', label:'Fully Booked' },
   partial:  { bg:'bg-amber-400',   text:'text-amber-900',  dot:'🟡', label:'Partial'      },
-  blocked:  { bg:'bg-gray-700',    text:'text-white',      dot:'⛔', label:'Blocked'      },
   none:     { bg:'',               text:'text-gray-400',   dot:'⚪', label:'No Schedule'  },
 };
 
 const inputCls = `w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-800 placeholder:text-gray-400 transition-all`;
 const labelCls = 'block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5';
 const avatarColors = ['bg-blue-100 text-blue-700','bg-teal-100 text-teal-700','bg-violet-100 text-violet-700'];
-const avatarCls = (n) => avatarColors[n.charCodeAt(0)%avatarColors.length];
+const avatarCls = (n) => avatarColors[n.charCodeAt(0) % avatarColors.length];
 
 const Section = ({ icon:Icon, title, accent='text-blue-600', children, action }) => (
   <Card className="border border-gray-100 shadow-sm">
@@ -94,24 +101,96 @@ const Section = ({ icon:Icon, title, accent='text-blue-600', children, action })
   </Card>
 );
 
+
+/* ═══════════════════════════════════════════════════
+   CUSTOM TIME PICKER
+   Hours: 8AM–11AM, 1PM–6PM (excludes 12PM–1PM lunch)
+═══════════════════════════════════════════════════ */
+const AVAILABLE_HOURS = [
+  { value: '08', label: '8', period: 'AM' },
+  { value: '09', label: '9', period: 'AM' },
+  { value: '10', label: '10', period: 'AM' },
+  { value: '11', label: '11', period: 'AM' },
+  // 12:00–13:00 excluded (lunch)
+  { value: '13', label: '1', period: 'PM' },
+  { value: '14', label: '2', period: 'PM' },
+  { value: '15', label: '3', period: 'PM' },
+  { value: '16', label: '4', period: 'PM' },
+  { value: '17', label: '5', period: 'PM' },
+  { value: '18', label: '6', period: 'PM' },
+];
+
+const MINUTES = ['00', '15', '30', '45'];
+
+function TimePicker({ value, onChange, label }) {
+  const [hour, setHour]   = React.useState(() => value ? value.split(':')[0] : '09');
+  const [minute, setMinute] = React.useState(() => value ? value.split(':')[1] : '00');
+
+  const handleChange = (h, m) => {
+    const newVal = `${h}:${m}`;
+    onChange(newVal);
+  };
+
+  const setH = (h) => { setHour(h); handleChange(h, minute); };
+  const setM = (m) => { setMinute(m); handleChange(hour, m); };
+
+  const display12 = (h) => {
+    const n = parseInt(h);
+    const h12 = n % 12 || 12;
+    const period = n >= 12 ? 'PM' : 'AM';
+    return `${h12} ${period}`;
+  };
+
+  return (
+    <div>
+      {label && <label className={labelCls}>{label}</label>}
+      <div className="flex gap-1.5 items-center">
+        <select
+          value={hour}
+          onChange={e => setH(e.target.value)}
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-800 transition-all cursor-pointer"
+        >
+          {AVAILABLE_HOURS.map(h => (
+            <option key={h.value} value={h.value}>{h.label} {h.period}</option>
+          ))}
+        </select>
+        <span className="text-gray-300 font-black text-base leading-none">:</span>
+        <select
+          value={minute}
+          onChange={e => setM(e.target.value)}
+          className="w-[72px] border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-800 transition-all cursor-pointer"
+        >
+          {MINUTES.map(m => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      </div>
+      <p className="text-[10px] text-blue-400 font-semibold mt-1">{to12(`${hour}:${minute}`)}</p>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════
    DATE EDITOR MODAL
 ═══════════════════════════════════════════════════ */
 function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
   const { toast } = useToast();
 
-  const existing = schedule[iso] || { slots:[], blocked:false, blockReason:'', blockFull:false, blockedRanges:[], repeat:false, repeatWeeks:4 };
-  const [data, setData]   = useState(existing);
-  const [errors, setErrors] = useState([]);
+  const existing = schedule[iso] || {
+    slots:[], repeat:false, repeatWeeks:4,
+  };
 
-  /* Close on Escape */
+  const [data,    setData]    = useState(existing);
+  const [errors,  setErrors]  = useState([]);
+  const [saving,  setSaving]  = useState(false);
+  const [clearing,setClearing]= useState(false);
+
   useEffect(() => {
-    const handler = (e) => { if (e.key==='Escape') onClose(); };
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  /* Lock body scroll */
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
@@ -119,67 +198,81 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
 
   const upd = (patch) => setData(d => ({ ...d, ...patch }));
 
-  /* Slot helpers */
-  const addSlot = () => upd({ slots:[...data.slots,{id:Date.now(),start:'09:00',end:'11:00',duration:30,maxPts:0,booked:0}] });
+  const addSlot    = () => upd({ slots:[...data.slots,{id:Date.now(),start:'09:00',end:'11:00',duration:30,maxPts:0,booked:0}] });
   const updateSlot = (id,k,v) => upd({ slots:data.slots.map(s=>s.id===id?{...s,[k]:v}:s) });
   const removeSlot = (id) => {
-    if (data.slots.find(s=>s.id===id)?.booked>0) { toast({title:'⚠️ Cannot remove',description:'Slot has existing bookings.',variant:'destructive'}); return; }
+    if (data.slots.find(s=>s.id===id)?.booked > 0) {
+      toast({ title:'⚠️ Cannot remove', description:'Slot has existing bookings.', variant:'destructive' });
+      return;
+    }
     upd({ slots:data.slots.filter(s=>s.id!==id) });
   };
 
-  /* Block range helpers */
-  const addRange    = () => upd({ blockedRanges:[...(data.blockedRanges||[]),{id:Date.now(),start:'12:00',end:'13:00',reason:''}] });
-  const updateRange = (id,k,v) => upd({ blockedRanges:data.blockedRanges.map(r=>r.id===id?{...r,[k]:v}:r) });
-  const removeRange = (id) => upd({ blockedRanges:data.blockedRanges.filter(r=>r.id!==id) });
 
-  /* Validate */
   const validate = () => {
     const errs = [];
     data.slots.forEach((s,i)=>{
-      if (toMins(s.start)>=toMins(s.end)) errs.push(`Slot ${i+1}: start must be before end.`);
+      if (toMins(s.start) >= toMins(s.end)) errs.push(`Slot ${i+1}: start must be before end.`);
     });
-    for (let i=0;i<data.slots.length;i++) for(let j=i+1;j<data.slots.length;j++) {
-      const a=data.slots[i],b=data.slots[j];
-      if (toMins(a.start)<toMins(b.end)&&toMins(a.end)>toMins(b.start)) errs.push(`Slots ${i+1} and ${j+1} overlap.`);
+    for (let i=0; i<data.slots.length; i++) for (let j=i+1; j<data.slots.length; j++) {
+      const a=data.slots[i], b=data.slots[j];
+      if (toMins(a.start)<toMins(b.end) && toMins(a.end)>toMins(b.start))
+        errs.push(`Slots ${i+1} and ${j+1} overlap.`);
     }
-    (data.blockedRanges||[]).forEach((r,i)=>{
-      if (toMins(r.start)>=toMins(r.end)) errs.push(`Block range ${i+1}: start must be before end.`);
-    });
+
     return errs;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const errs = validate();
     if (errs.length) { setErrors(errs); return; }
-    onSave(iso, data);
-    toast({ title:'💾 Schedule saved', description:`${fmtDate(iso)} updated.` });
-    onClose();
+
+    setSaving(true);
+    try {
+      await onSave(iso, data);
+      toast({ title:'💾 Schedule saved', description:`${fmtDate(iso)} updated.` });
+      onClose();
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to save schedule.';
+      toast({ title:'❌ Save failed', description: msg, variant:'destructive' });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleClear = () => {
-    const hasBooked = data.slots.some(s=>s.booked>0);
-    if (hasBooked) { toast({title:'⚠️ Cannot clear',description:'Date has existing appointments.',variant:'destructive'}); return; }
-    onClear(iso);
-    toast({ title:'🗑 Schedule cleared', description:`${fmtDate(iso)} cleared.` });
-    onClose();
+  const handleClear = async () => {
+    const hasBooked = data.slots.some(s => s.booked > 0);
+    if (hasBooked) {
+      toast({ title:'⚠️ Cannot clear', description:'Date has existing appointments.', variant:'destructive' });
+      return;
+    }
+    setClearing(true);
+    try {
+      await onClear(iso);
+      toast({ title:'🗑 Schedule cleared', description:`${fmtDate(iso)} cleared.` });
+      onClose();
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Failed to clear schedule.';
+      toast({ title:'❌ Clear failed', description: msg, variant:'destructive' });
+    } finally {
+      setClearing(false);
+    }
   };
 
   const status      = dateStatus(iso, schedule);
   const sstyle      = DATE_STATUS_STYLE[status];
-  const totalSlots  = data.slots.reduce((a,s)=>a+slotCount(s),0);
-  const bookedSlots = data.slots.reduce((a,s)=>a+(s.booked||0),0);
+  const totalSlots  = data.slots.reduce((a,s) => a + slotCount(s), 0);
+  const bookedSlots = data.slots.reduce((a,s) => a + (s.booked||0), 0);
 
   return (
-    /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background:'rgba(15,23,42,0.55)', backdropFilter:'blur(3px)' }}
-      onClick={(e) => { if(e.target===e.currentTarget) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Modal panel */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
 
-        {/* ── Modal Header ── */}
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -192,11 +285,10 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                   ${status==='available'?'bg-emerald-100 text-emerald-700'
                   :status==='full'      ?'bg-red-100 text-red-600'
                   :status==='partial'   ?'bg-amber-100 text-amber-700'
-                  :status==='blocked'   ?'bg-gray-200 text-gray-600'
                   :                      'bg-gray-100 text-gray-400'}`}>
                   {sstyle.dot} {sstyle.label}
                 </span>
-                {totalSlots>0 && (
+                {totalSlots > 0 && (
                   <span className="text-xs text-gray-400 font-medium">{bookedSlots}/{totalSlots} slots booked</span>
                 )}
               </div>
@@ -208,13 +300,12 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
           </button>
         </div>
 
-        {/* ── Scrollable Body ── */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
-          {/* Validation errors */}
-          {errors.length>0 && (
+          {errors.length > 0 && (
             <div className="p-3 rounded-xl bg-red-50 border border-red-200 space-y-1">
-              {errors.map((e,i)=>(
+              {errors.map((e,i) => (
                 <p key={i} className="text-xs font-semibold text-red-600 flex items-center gap-1.5">
                   <AlertCircle className="w-3 h-3 flex-shrink-0"/>{e}
                 </p>
@@ -222,70 +313,10 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
             </div>
           )}
 
-          {/* ── §5 Block Entire Day ── */}
-          <div>
-            <p className="text-xs font-black text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-              <Ban className="w-3.5 h-3.5 text-red-500"/> Block This Day
-            </p>
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 mb-3">
-              <div>
-                <p className="text-sm font-bold text-gray-800">Block Entire Day</p>
-                <p className="text-xs text-gray-400 mt-0.5">No appointments will be allowed on this date</p>
-              </div>
-              <button onClick={()=>upd({blocked:!data.blocked,blockFull:!data.blocked})}
-                className={`relative w-12 h-6 rounded-full transition-all duration-300 flex-shrink-0 cursor-pointer ${data.blocked?'bg-red-500':'bg-gray-300'}`}>
-                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-300 ${data.blocked?'left-6':'left-0.5'}`}/>
-              </button>
-            </div>
-            {data.blocked && (
-              <div>
-                <label className={labelCls}>Block Reason</label>
-                <select value={data.blockReason} onChange={e=>upd({blockReason:e.target.value})} className={inputCls}>
-                  <option value="">Select reason...</option>
-                  {BLOCK_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-            )}
 
-            {/* Partial block ranges */}
-            {!data.blocked && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className={labelCls + ' mb-0'}>Block Partial Hours</label>
-                  <button onClick={addRange} className="flex items-center gap-1 text-xs font-bold text-red-500 hover:text-red-700 transition-colors">
-                    <Plus className="w-3 h-3"/> Add Range
-                  </button>
-                </div>
-                {(data.blockedRanges||[]).length===0
-                  ? <p className="text-xs text-gray-400 italic">No partial blocks.</p>
-                  : (data.blockedRanges||[]).map((r,i)=>(
-                    <div key={r.id} className="grid grid-cols-12 gap-2 items-end mb-2">
-                      <div className="col-span-4">
-                        {i===0&&<label className={labelCls}>Start</label>}
-                        <input type="time" value={r.start} onChange={e=>updateRange(r.id,'start',e.target.value)} className={inputCls}/>
-                      </div>
-                      <div className="col-span-4">
-                        {i===0&&<label className={labelCls}>End</label>}
-                        <input type="time" value={r.end} onChange={e=>updateRange(r.id,'end',e.target.value)} className={inputCls}/>
-                      </div>
-                      <div className="col-span-3">
-                        {i===0&&<label className={labelCls}>Reason</label>}
-                        <input type="text" value={r.reason} onChange={e=>updateRange(r.id,'reason',e.target.value)} placeholder="Optional" className={inputCls}/>
-                      </div>
-                      <div className="col-span-1 flex justify-end pb-0.5">
-                        <button onClick={()=>removeRange(r.id)} className="w-8 h-9 rounded-lg border border-red-200 flex items-center justify-center text-red-400 hover:bg-red-50 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5"/>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                }
-              </div>
-            )}
-          </div>
 
-          {/* ── §2+3 Time Slots ── */}
-          {!data.blocked && (
+          {/* Time Slots */}
+          {(
             <div>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-black text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
@@ -297,7 +328,7 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                 </button>
               </div>
 
-              {data.slots.length===0 ? (
+              {data.slots.length === 0 ? (
                 <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-2xl">
                   <Clock className="w-8 h-8 text-gray-300 mx-auto mb-2"/>
                   <p className="text-sm font-bold text-gray-400 mb-1">No time slots yet</p>
@@ -308,15 +339,15 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {data.slots.map((slot,idx)=>{
-                    const generated  = slotCount(slot);
-                    const hasBooked  = (slot.booked||0)>0;
+                  {data.slots.map((slot,idx) => {
+                    const generated = slotCount(slot);
+                    const hasBooked = (slot.booked||0) > 0;
                     return (
                       <div key={slot.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/60 space-y-3">
                         <div className="flex items-center justify-between">
                           <p className="text-xs font-black text-gray-600 uppercase tracking-wide">Slot {idx+1}</p>
                           <div className="flex items-center gap-2">
-                            {generated>0 && (
+                            {generated > 0 && (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
                                 {generated} appts · {slot.booked||0} booked
                               </span>
@@ -330,21 +361,25 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <label className={labelCls}>Start</label>
-                            <input type="time" value={slot.start} onChange={e=>updateSlot(slot.id,'start',e.target.value)} className={inputCls}/>
-                            <p className="text-[10px] text-gray-400 mt-1">{to12(slot.start)}</p>
+                            <TimePicker
+                              label="Start"
+                              value={slot.start}
+                              onChange={v => updateSlot(slot.id, 'start', v)}
+                            />
                           </div>
                           <div>
-                            <label className={labelCls}>End</label>
-                            <input type="time" value={slot.end} onChange={e=>updateSlot(slot.id,'end',e.target.value)} className={inputCls}/>
-                            <p className="text-[10px] text-gray-400 mt-1">{to12(slot.end)}</p>
+                            <TimePicker
+                              label="End"
+                              value={slot.end}
+                              onChange={v => updateSlot(slot.id, 'end', v)}
+                            />
                           </div>
                           <div>
                             <label className={labelCls}>Duration</label>
                             <select value={slot.duration} onChange={e=>updateSlot(slot.id,'duration',Number(e.target.value))} className={inputCls}>
-                              {SLOT_DURATIONS.map(d=><option key={d} value={d}>{d} min</option>)}
+                              {SLOT_DURATIONS.map(d => <option key={d} value={d}>{d} min</option>)}
                             </select>
                           </div>
                           <div>
@@ -353,15 +388,14 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                           </div>
                         </div>
 
-                        {generated>0 && (
+                        {generated > 0 && (
                           <div className="pt-2 border-t border-gray-200">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">Auto-generated slots</p>
                             <div className="flex flex-wrap gap-1.5">
-                              {Array.from({length:generated}).map((_,i)=>{
-                                const startM=toMins(slot.start)+i*slot.duration;
-                                const hS=Math.floor(startM/60),mS=startM%60;
+                              {generateSlotTimes(slot.start, slot.end, slot.duration).map((startM, i) => {
+                                const hS=Math.floor(startM/60), mS=startM%60;
                                 const sStr=`${pad2(hS)}:${pad2(mS)}`;
-                                const isBooked=i<(slot.booked||0);
+                                const isBooked = i < (slot.booked||0);
                                 return (
                                   <span key={i} className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${isBooked?'bg-red-50 text-red-600 border-red-200':'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                                     {to12(sStr)}
@@ -379,8 +413,8 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
             </div>
           )}
 
-          {/* ── §4 Repeat ── */}
-          {!data.blocked && (
+          {/* Repeat */}
+          {(
             <div>
               <p className="text-xs font-black text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
                 <Repeat className="w-3.5 h-3.5 text-indigo-500"/> Repeat Schedule
@@ -390,7 +424,7 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                   <p className="text-sm font-bold text-gray-800">Repeat Weekly</p>
                   <p className="text-xs text-gray-400 mt-0.5">Apply this schedule to the next N weeks</p>
                 </div>
-                <button onClick={()=>upd({repeat:!data.repeat})}
+                <button onClick={() => upd({ repeat:!data.repeat })}
                   className={`relative w-12 h-6 rounded-full transition-all duration-300 flex-shrink-0 cursor-pointer ${data.repeat?'bg-indigo-500':'bg-gray-300'}`}>
                   <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-300 ${data.repeat?'left-6':'left-0.5'}`}/>
                 </button>
@@ -399,8 +433,8 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-xs font-bold text-gray-500 whitespace-nowrap">Repeat for</span>
                   <div className="flex gap-2">
-                    {[2,3,4,6,8].map(w=>(
-                      <button key={w} onClick={()=>upd({repeatWeeks:w})}
+                    {[2,3,4,6,8].map(w => (
+                      <button key={w} onClick={() => upd({ repeatWeeks:w })}
                         className={`px-4 py-2 rounded-xl text-xs font-bold border-2 transition-all
                           ${data.repeatWeeks===w?'bg-indigo-600 text-white border-indigo-600':'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>
                         {w}w
@@ -412,23 +446,24 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
               )}
             </div>
           )}
-
         </div>
 
-        {/* ── Modal Footer ── */}
+        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex-shrink-0">
-          <button onClick={handleClear}
-            className="flex items-center gap-1.5 text-xs font-bold text-red-500 hover:text-red-700 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors">
-            <Trash2 className="w-3.5 h-3.5"/> Clear Day
+          <button onClick={handleClear} disabled={clearing}
+            className="flex items-center gap-1.5 text-xs font-bold text-red-500 hover:text-red-700 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
+            {clearing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Trash2 className="w-3.5 h-3.5"/>}
+            Clear Day
           </button>
           <div className="flex items-center gap-2">
             <button onClick={onClose}
               className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors">
               Cancel
             </button>
-            <Button onClick={handleSave}
+            <Button onClick={handleSave} disabled={saving}
               className="bg-blue-600 hover:bg-blue-700 text-white gap-2 font-bold shadow-sm shadow-blue-200 text-xs">
-              <Save className="w-3.5 h-3.5"/> Save Date
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Save className="w-3.5 h-3.5"/>}
+              Save Date
             </Button>
           </div>
         </div>
@@ -442,100 +477,155 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
    MAIN PAGE
 ═══════════════════════════════════════════════════ */
 export default function AvailabilityPage() {
-  const { toast } = useToast();
+  const { toast }    = useToast();
+  const { user }     = useAuth();
 
-  const [doctorStatus, setDoctorStatus] = useState(DOCTOR.status);
-  const [schedule, setSchedule]         = useState(INITIAL_SCHEDULE);
-  const [calYear,  setCalYear]          = useState(today.getFullYear());
-  const [calMonth, setCalMonth]         = useState(today.getMonth());
-  const [selectedDate, setSelectedDate] = useState(null); // null = modal closed
+  // Derive doctor info from logged-in user
+  const DOCTOR_USER_ID  = user?.user_id ?? null;
+  const doctorName      = user ? `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() : '—';
+  const doctorAvatar    = user ? `${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase() : '??';
+  const doctorId        = user?.user_id ? `DR-${String(user.user_id).padStart(4,'0')}` : '—';
+  const doctorSpecialty = user?.role ?? 'General Medicine';
 
+  const [doctorStatus, setDoctorStatus] = useState('available');
+  const [schedule,     setSchedule]     = useState({});
+  const [loading,      setLoading]      = useState(false);
+  const [calYear,      setCalYear]      = useState(today.getFullYear());
+  const [calMonth,     setCalMonth]     = useState(today.getMonth());
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  /* ── Fetch schedules from API on mount ── */
+  const fetchSchedules = useCallback(async (userId) => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await axios.get(`${API_BASE}/doctor-schedules`, {
+        params: { user_id: userId },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      // Normalize — ensure slots is always an array
+      const normalized = {};
+      for (const [date, d] of Object.entries(res.data ?? {})) {
+        normalized[date] = {
+          ...d,
+          slots: Array.isArray(d.slots) ? d.slots : [],
+        };
+      }
+      setSchedule(normalized);
+    } catch (err) {
+      toast({ title:'\u274c Failed to load schedules', description: err.message, variant:'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user?.user_id) fetchSchedules(user.user_id);
+  }, [user?.user_id]);
+
+  /* ── Save callback (passed to modal) ── */
+  const handleSave = async (iso, data) => {
+    const token = localStorage.getItem('auth_token');
+    await axios.post(`${API_BASE}/doctor-schedules`, {
+      user_id:       DOCTOR_USER_ID,
+      schedule_date: iso,
+      repeat:        data.repeat,
+      repeat_weeks:  data.repeatWeeks,
+      slots: data.slots.map(s => ({
+        start:    s.start,
+        end:      s.end,
+        duration: s.duration,
+        maxPts:   s.maxPts,
+        booked:   s.booked,
+      })),
+
+    }, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    // Re-fetch to get fresh DB state (handles repeat weeks too)
+    await fetchSchedules(DOCTOR_USER_ID);
+  };
+
+  /* ── Clear callback (passed to modal) ── */
+  const handleClear = async (iso) => {
+    const token = localStorage.getItem('auth_token');
+    await axios.delete(`${API_BASE}/doctor-schedules/${DOCTOR_USER_ID}/${iso}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    setSchedule(prev => {
+      const n = { ...prev };
+      delete n[iso];
+      return n;
+    });
+  };
+
+  /* ── Calendar helpers ── */
   const prevMonth = () => { if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); };
   const nextMonth = () => { if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); };
 
   const daysInMonth = (y,m) => new Date(y,m+1,0).getDate();
-  const firstDOW    = (y,m) => new Date(y,m,1).getDay(); // 0=Sun
+  const firstDOW    = (y,m) => new Date(y,m,1).getDay();
 
-  const calDays = useMemo(()=>{
-    const total=daysInMonth(calYear,calMonth);
-    const start=firstDOW(calYear,calMonth);
-    const cells=[];
-    for(let i=0;i<start;i++) cells.push(null);
-    for(let d=1;d<=total;d++) cells.push(d);
+  const calDays = useMemo(() => {
+    const total = daysInMonth(calYear, calMonth);
+    const start = firstDOW(calYear, calMonth);
+    const cells = [];
+    for (let i=0; i<start; i++) cells.push(null);
+    for (let d=1; d<=total; d++) cells.push(d);
     return cells;
-  },[calYear,calMonth]);
+  }, [calYear, calMonth]);
 
-  /* Save/clear callbacks passed to modal */
-  const handleSave = (iso, data) => {
-    if (data.repeat && data.repeatWeeks>1) {
-      const updates={};
-      for(let w=0;w<data.repeatWeeks;w++){
-        const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+w*7);
-        const wiso=`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-        if(!isPast(wiso)) updates[wiso]={...data,slots:data.slots.map(s=>({...s,id:Date.now()+w+s.id,booked:0}))};
-      }
-      setSchedule(prev=>({...prev,...updates}));
-      toast({title:'🔁 Schedule repeated',description:`Applied to ${data.repeatWeeks} weeks.`});
-    } else {
-      setSchedule(prev=>({...prev,[iso]:data}));
-    }
-  };
-
-  const handleClear = (iso) => {
-    setSchedule(prev=>{ const n={...prev}; delete n[iso]; return n; });
-  };
-
-  const upcomingDates = useMemo(()=>
+  const upcomingDates = useMemo(() =>
     Object.entries(schedule)
-      .filter(([iso])=>iso>=todayISO)
-      .sort(([a],[b])=>a.localeCompare(b))
-      .map(([iso,data])=>{
-        const total  = data.slots.reduce((a,s)=>a+slotCount(s),0);
-        const booked = data.slots.reduce((a,s)=>a+(s.booked||0),0);
-        return {iso,data,totalSlots:total,bookedSlots:booked,remaining:total-booked,status:dateStatus(iso,schedule)};
-      }),
+      .filter(([iso]) => iso >= todayISO)
+      .sort(([a],[b]) => a.localeCompare(b))
+      .map(([iso,data]) => {
+        const total  = data.slots.reduce((a,s) => a + slotCount(s), 0);
+        const booked = data.slots.reduce((a,s) => a + (s.booked||0), 0);
+        return { iso, data, totalSlots:total, bookedSlots:booked, remaining:total-booked, status:dateStatus(iso,schedule) };
+      })
+      .filter(({ status }) => status === 'available' || status === 'full'),
   [schedule]);
 
-  const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  const WDAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const WDAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const statusCfg = STATUS_CFG[doctorStatus];
 
   return (
-    <MainLayout title="Availability" subtitle="Set your schedule, time slots, and blocked dates per day">
+    <MainLayout title="Availability" subtitle="Set your available schedule and time slots">
       <div className="space-y-5">
 
-        {/* ══ MODAL ══ */}
         {selectedDate && (
           <DateEditorModal
             iso={selectedDate}
             schedule={schedule}
-            onClose={()=>setSelectedDate(null)}
+            onClose={() => setSelectedDate(null)}
             onSave={handleSave}
             onClear={handleClear}
           />
         )}
 
-        {/* ══════════════════════════════════════════════
-            §1  HEADER
-        ══════════════════════════════════════════════ */}
+        {/* Header */}
         <div className="relative rounded-2xl p-6 text-white overflow-hidden bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700">
           <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-white/5 pointer-events-none"/>
           <div className="absolute bottom-0 right-10 w-36 h-36 rounded-full bg-white/5 pointer-events-none"/>
           <div className="relative flex items-start justify-between flex-wrap gap-5">
             <div className="flex items-center gap-4">
-              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-black flex-shrink-0 border-2 border-white/30 ${avatarCls(DOCTOR.name)}`}>
-                {DOCTOR.avatar}
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-black flex-shrink-0 border-2 border-white/30 ${avatarCls(doctorName)}`}>
+                {doctorAvatar}
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-2xl font-black">{DOCTOR.name}</h2>
+                  <h2 className="text-2xl font-black">{doctorName}</h2>
                   <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full ${statusCfg.bg} ${statusCfg.text} border ${statusCfg.border}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot} ${doctorStatus==='available'?'animate-pulse':''}`}/>
                     {statusCfg.label}
                   </span>
                 </div>
                 <p className="text-white/80 text-sm mt-0.5 flex items-center gap-1.5">
-                  <Stethoscope className="w-3.5 h-3.5"/>{DOCTOR.specialty} · {DOCTOR.id}
+                  <Stethoscope className="w-3.5 h-3.5"/>{doctorSpecialty} · {doctorId}
                 </p>
                 <div className="flex items-center gap-4 mt-2 flex-wrap text-white/70 text-xs font-semibold">
                   <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/> {upcomingDates.length} upcoming dates</span>
@@ -546,8 +636,8 @@ export default function AvailabilityPage() {
             <div className="flex flex-col items-end gap-2">
               <p className="text-white/60 text-xs font-bold uppercase tracking-wide">Status</p>
               <div className="flex gap-2">
-                {Object.entries(STATUS_CFG).map(([key,cfg])=>(
-                  <button key={key} onClick={()=>setDoctorStatus(key)}
+                {Object.entries(STATUS_CFG).map(([key,cfg]) => (
+                  <button key={key} onClick={() => setDoctorStatus(key)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all
                       ${doctorStatus===key?`${cfg.bg} ${cfg.text} ${cfg.border}`:'bg-white/10 text-white/60 border-white/20 hover:bg-white/20'}`}>
                     {cfg.label}
@@ -558,9 +648,9 @@ export default function AvailabilityPage() {
           </div>
         </div>
 
-        {/* ══════════════════════════════════════════════
-            §2  CALENDAR  (full width now — no side editor)
-        ══════════════════════════════════════════════ */}
+        {/* Calendar + Upcoming side by side */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 items-start">
+        <div className="lg:col-span-3">
         <Section icon={Calendar} title="Monthly Calendar" accent="text-blue-600"
           action={
             <div className="flex items-center gap-2">
@@ -578,144 +668,138 @@ export default function AvailabilityPage() {
             <Info className="w-3.5 h-3.5"/> Click any future date to open the schedule editor.
           </p>
 
-          {/* Day headers */}
-          <div className="grid grid-cols-7 mb-2">
-            {WDAYS.map(d=>(
-              <div key={d} className="text-[11px] font-bold text-gray-400 text-center py-1">{d}</div>
-            ))}
-          </div>
-
-          {/* Day cells */}
-          <div className="grid grid-cols-7 gap-1.5">
-            {calDays.map((day,i)=>{
-              if(!day) return <div key={`empty-${i}`}/>;
-              const iso    = isoOf(calYear,calMonth+1,day);
-              const past   = isPast(iso);
-              const isToday= iso===todayISO;
-              const status = dateStatus(iso,schedule);
-              const sstyle = DATE_STATUS_STYLE[status];
-
-              return (
-                <button key={iso}
-                  onClick={()=>!past&&setSelectedDate(iso)}
-                  title={past?'Past date':'Click to edit'}
-                  className={`
-                    relative w-full rounded-xl flex flex-col items-center justify-center py-2.5 px-1
-                    text-xs font-bold transition-all group
-                    ${past?'opacity-30 cursor-not-allowed text-gray-400':'cursor-pointer'}
-                    ${!past&&status==='none'?'hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 border border-transparent':''}
-                    ${status!=='none'&&!past?`${sstyle.bg} ${sstyle.text} shadow-sm`:'bg-gray-50 border border-gray-100'}
-                    ${isToday?'ring-2 ring-indigo-400 ring-offset-1':''}
-                  `}>
-                  <span className="text-sm font-black leading-none">{day}</span>
-                  {isToday && <span className="text-[8px] font-bold mt-0.5 opacity-70">Today</span>}
-                  {status!=='none' && !past && (
-                    <span className="text-[9px] mt-0.5 opacity-75 leading-none">
-                      {status==='blocked'?'Blocked'
-                        :status==='full'?'Full'
-                        :status==='partial'?'Partial'
-                        :`${schedule[iso]?.slots.reduce((a,s)=>a+slotCount(s),0)-schedule[iso]?.slots.reduce((a,s)=>a+(s.booked||0),0)} left`}
-                    </span>
-                  )}
-                  {/* Hover hint for empty days */}
-                  {!past&&status==='none'&&(
-                    <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Plus className="w-4 h-4 text-blue-400"/>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Legend */}
-          <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap gap-x-5 gap-y-2">
-            {Object.entries(DATE_STATUS_STYLE).map(([k,v])=>(
-              <div key={k} className="flex items-center gap-1.5">
-                <span className="text-sm">{v.dot}</span>
-                <span className="text-xs font-semibold text-gray-500">{v.label}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* ══════════════════════════════════════════════
-            §6  UPCOMING DATES TABLE
-        ══════════════════════════════════════════════ */}
-        <Section icon={CalendarClock} title="Upcoming Scheduled Dates" accent="text-indigo-600"
-          action={<span className="text-xs text-gray-400 font-medium">{upcomingDates.length} dates</span>}>
-          {upcomingDates.length===0 ? (
-            <p className="text-sm text-gray-400 italic text-center py-4">No upcoming dates scheduled. Click a date on the calendar to get started.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/80">
-                    {['Date','Status','Available Slots','Booked','Remaining','Actions'].map(h=>(
-                      <th key={h} className="text-left py-3 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap first:pl-2">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {upcomingDates.map(({iso,totalSlots,bookedSlots,remaining,status})=>{
-                    const sstyle=DATE_STATUS_STYLE[status];
-                    return (
-                      <tr key={iso} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
-                        <td className="py-3.5 px-4 pl-2 whitespace-nowrap">
-                          <p className="text-xs font-black text-gray-800">{fmtDate(iso)}</p>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full
-                            ${status==='available'?'bg-emerald-100 text-emerald-700'
-                            :status==='full'      ?'bg-red-100 text-red-600'
-                            :status==='partial'   ?'bg-amber-100 text-amber-700'
-                            :status==='blocked'   ?'bg-gray-200 text-gray-600'
-                            :                      'bg-gray-100 text-gray-400'}`}>
-                            {sstyle.dot} {sstyle.label}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4"><p className="text-xs font-bold text-gray-700">{totalSlots}</p></td>
-                        <td className="py-3.5 px-4"><span className={`text-xs font-bold ${bookedSlots>0?'text-blue-600':'text-gray-400'}`}>{bookedSlots}</span></td>
-                        <td className="py-3.5 px-4"><span className={`text-xs font-bold ${remaining>0?'text-emerald-600':'text-red-500'}`}>{remaining}</span></td>
-                        <td className="py-3.5 px-4">
-                          <button
-                            onClick={()=>{
-                              const d=new Date(iso+'T00:00:00');
-                              setCalYear(d.getFullYear()); setCalMonth(d.getMonth());
-                              setSelectedDate(iso);
-                            }}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-100 transition-colors">
-                            <Edit className="w-3 h-3"/> Edit
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-500"/>
+              <span className="ml-2 text-sm text-gray-400">Loading schedule...</span>
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-7 mb-2">
+                {WDAYS.map(d => (
+                  <div key={d} className="text-[11px] font-bold text-gray-400 text-center py-1">{d}</div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5">
+                {calDays.map((day,i) => {
+                  if (!day) return <div key={`empty-${i}`}/>;
+                  const iso    = isoOf(calYear, calMonth+1, day);
+                  const past   = isPast(iso);
+                  const isToday= iso === todayISO;
+                  const status = dateStatus(iso, schedule);
+                  const sstyle = DATE_STATUS_STYLE[status];
+
+                  return (
+                    <button key={iso}
+                      onClick={() => !past && setSelectedDate(iso)}
+                      title={past ? 'Past date' : 'Click to edit'}
+                      className={`
+                        relative w-full rounded-xl flex flex-col items-center justify-center py-2.5 px-1
+                        text-xs font-bold transition-all group
+                        ${past ? 'opacity-30 cursor-not-allowed text-gray-400' : 'cursor-pointer'}
+                        ${!past&&status==='none' ? 'hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 border border-transparent' : ''}
+                        ${status!=='none'&&!past ? `${sstyle.bg} ${sstyle.text} shadow-sm` : 'bg-gray-50 border border-gray-100'}
+                        ${isToday ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                      `}>
+                      <span className="text-sm font-black leading-none">{day}</span>
+                      {isToday && <span className="text-[8px] font-bold mt-0.5 opacity-70">Today</span>}
+                      {status!=='none' && !past && (
+                        <span className="text-[9px] mt-0.5 opacity-75 leading-none">
+                          {status==='full' ? 'Full'
+                            : status==='partial' ? 'Partial'
+                            : `${schedule[iso]?.slots.reduce((a,s)=>a+slotCount(s),0)-schedule[iso]?.slots.reduce((a,s)=>a+(s.booked||0),0)} left`}
+                        </span>
+                      )}
+                      {!past && status==='none' && (
+                        <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus className="w-4 h-4 text-blue-400"/>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap gap-x-5 gap-y-2">
+                {Object.entries(DATE_STATUS_STYLE).map(([k,v]) => (
+                  <div key={k} className="flex items-center gap-1.5">
+                    <span className="text-sm">{v.dot}</span>
+                    <span className="text-xs font-semibold text-gray-500">{v.label}</span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </Section>
+        </div>{/* end 3/4 col */}
 
-        {/* ══════════════════════════════════════════════
-            §8  ACTION BUTTONS
-        ══════════════════════════════════════════════ */}
+        {/* Upcoming Dates — 1/4 col, scrollable */}
+        <div className="lg:col-span-1">
+        <Card className="border border-gray-100 shadow-sm h-full">
+          <CardHeader className="pb-0 px-5 pt-5 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-indigo-600"/>Upcoming
+              </CardTitle>
+              <span className="text-xs text-gray-400 font-medium">{upcomingDates.length}</span>
+            </div>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 pt-4">
+          <div className="overflow-y-auto max-h-[520px] space-y-2 pr-1">
+          {upcomingDates.length === 0 ? (
+            <p className="text-xs text-gray-400 italic text-center py-8">No upcoming dates yet.</p>
+          ) : (
+            upcomingDates.map(({ iso, totalSlots, bookedSlots, remaining, status }) => {
+              const sstyle = DATE_STATUS_STYLE[status];
+              return (
+                <div key={iso}
+                  className="p-3 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-blue-50/40 hover:border-blue-100 transition-all cursor-pointer"
+                  onClick={() => {
+                    const d = new Date(iso + 'T00:00:00');
+                    setCalYear(d.getFullYear()); setCalMonth(d.getMonth());
+                    setSelectedDate(iso);
+                  }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-xs font-black text-gray-800 leading-tight">{fmtDate(iso)}</p>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full
+                      ${status==='available' ? 'bg-emerald-100 text-emerald-700'
+                      : status==='full'      ? 'bg-red-100 text-red-600'
+                      : status==='partial'   ? 'bg-amber-100 text-amber-700'
+                      :                        'bg-gray-100 text-gray-400'}`}>
+                      {sstyle.dot} {sstyle.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-semibold text-gray-400">
+                    <span className="text-blue-500">{bookedSlots} booked</span>
+                    <span>·</span>
+                    <span className={remaining > 0 ? 'text-emerald-600' : 'text-red-400'}>{remaining} left</span>
+                    <span>·</span>
+                    <span>{totalSlots} total</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          </div>
+          </CardContent>
+        </Card>
+        </div>{/* end 1/4 col */}
+        </div>{/* end grid */}
+
+        {/* Action Buttons */}
         <Card className="border border-gray-100 shadow-sm">
           <CardContent className="p-5">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <Button onClick={()=>toast({title:'💾 All changes saved',description:'Availability schedule has been updated.'})}
-                  className="bg-blue-600 hover:bg-blue-700 text-white gap-2 font-bold shadow-sm shadow-blue-200">
-                  <Save className="w-4 h-4"/> Save All Changes
-                </Button>
-                <Button variant="outline"
-                  onClick={()=>toast({title:'🔄 Slots recalculated',description:'Available slots have been refreshed.'})}
+                <Button onClick={() => fetchSchedules(DOCTOR_USER_ID)}
+                  variant="outline"
                   className="gap-2 border-gray-200 font-bold text-gray-700">
-                  <RefreshCw className="w-4 h-4 text-gray-500"/> Recalculate Slots
+                  <RefreshCw className="w-4 h-4 text-gray-500"/> Refresh Schedule
                 </Button>
               </div>
               <div className="text-xs text-gray-400 flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5"/> All schedule changes are logged for admin review.
+                <Info className="w-3.5 h-3.5"/> All schedule changes are saved directly to the database.
               </div>
             </div>
             <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-2 text-xs text-gray-400">

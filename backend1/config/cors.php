@@ -6,7 +6,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],   // tighten this to your React URL in production
+    'allowed_origins' => ['http://localhost:5173'],   // tighten this to your React URL in production
 
     'allowed_origins_patterns' => [],
 
@@ -16,6 +16,6 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    'supports_credentials' => true,
 
 ];

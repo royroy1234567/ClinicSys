@@ -49,7 +49,7 @@ class ServicsController extends Controller
             'price'            => 'required|numeric|min:0',
             'duration_minutes' => 'nullable|integer|min:0',
             'unit'             => 'nullable|string|max:50',
-            'category'         => ['required', Rule::in(['consultation','procedure','laboratory','fee'])],
+            'category'         => ['required', Rule::in(['consultation','procedure','fee'])],
             'status'           => ['nullable', Rule::in(['active','inactive'])],
         ]);
 
@@ -81,7 +81,7 @@ class ServicsController extends Controller
             'price'            => 'sometimes|required|numeric|min:0',
             'duration_minutes' => 'nullable|integer|min:0',
             'unit'             => 'nullable|string|max:50',
-            'category'         => ['sometimes', Rule::in(['consultation','procedure','laboratory','fee'])],
+           'category' => ['sometimes', Rule::in(['consultation', 'procedure', 'fee'])],
             'status'           => ['nullable', Rule::in(['active','inactive'])],
         ]);
 

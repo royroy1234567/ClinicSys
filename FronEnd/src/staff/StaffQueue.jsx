@@ -43,31 +43,31 @@ const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm tex
 
 let _counter = 9;
 
-/* ── Patient master list (simulating a DB of known patients) ── */
+/* ── Patient master list ── */
 const PATIENT_DB = [
-  { id: 'P001', name: 'John Doe',       contact: '+63 917 1001001', lastVisit: '2025-06-10', doctor: 'Dr. Sarah Smith'  },
-  { id: 'P002', name: 'Jane Smith',     contact: '+63 918 2002002', lastVisit: '2025-06-15', doctor: 'Dr. Michael Chen' },
-  { id: 'P003', name: 'Robert Johnson', contact: '+63 919 3003003', lastVisit: '2025-05-20', doctor: 'Dr. James Lim'    },
-  { id: 'P004', name: 'Maria Santos',   contact: '+63 912 0001',    lastVisit: '2025-06-18', doctor: 'Dr. Sarah Smith'  },
-  { id: 'P005', name: 'Carlos Reyes',   contact: '+63 915 5005005', lastVisit: '2025-04-30', doctor: 'Dr. Reyna Torres' },
-  { id: 'P006', name: 'Ana Cruz',       contact: '+63 917 0002',    lastVisit: '2025-06-01', doctor: 'Dr. Ana Reyes'    },
-  { id: 'P007', name: 'Ben Torres',     contact: '+63 920 7007007', lastVisit: '2025-03-12', doctor: 'Dr. Michael Chen' },
-  { id: 'P008', name: 'Carla Mendoza',  contact: '+63 919 0003',    lastVisit: '2025-06-05', doctor: 'Dr. James Lim'    },
-  { id: 'P009', name: 'Ramon Bautista', contact: '+63 916 9009009', lastVisit: '2025-05-08', doctor: 'Dr. Sarah Smith'  },
-  { id: 'P010', name: 'Liza Navarro',   contact: '+63 917 1010010', lastVisit: '2025-02-22', doctor: 'Dr. Ana Reyes'    },
-  { id: 'P011', name: 'Eduardo Flores', contact: '+63 918 1111011', lastVisit: '2025-06-12', doctor: 'Dr. Reyna Torres' },
-  { id: 'P012', name: 'Grace Villanueva', contact: '+63 912 1212012', lastVisit: '2025-01-15', doctor: 'Dr. James Lim' },
+  { id: 'P001', name: 'John Doe',         contact: '+63 917 1001001', lastVisit: '2025-06-10', doctor: 'Dr. Sarah Smith'  },
+  { id: 'P002', name: 'Jane Smith',       contact: '+63 918 2002002', lastVisit: '2025-06-15', doctor: 'Dr. Michael Chen' },
+  { id: 'P003', name: 'Robert Johnson',   contact: '+63 919 3003003', lastVisit: '2025-05-20', doctor: 'Dr. James Lim'    },
+  { id: 'P004', name: 'Maria Santos',     contact: '+63 912 0001',    lastVisit: '2025-06-18', doctor: 'Dr. Sarah Smith'  },
+  { id: 'P005', name: 'Carlos Reyes',     contact: '+63 915 5005005', lastVisit: '2025-04-30', doctor: 'Dr. Reyna Torres' },
+  { id: 'P006', name: 'Ana Cruz',         contact: '+63 917 0002',    lastVisit: '2025-06-01', doctor: 'Dr. Ana Reyes'    },
+  { id: 'P007', name: 'Ben Torres',       contact: '+63 920 7007007', lastVisit: '2025-03-12', doctor: 'Dr. Michael Chen' },
+  { id: 'P008', name: 'Carla Mendoza',    contact: '+63 919 0003',    lastVisit: '2025-06-05', doctor: 'Dr. James Lim'    },
+  { id: 'P009', name: 'Ramon Bautista',   contact: '+63 916 9009009', lastVisit: '2025-05-08', doctor: 'Dr. Sarah Smith'  },
+  { id: 'P010', name: 'Liza Navarro',     contact: '+63 917 1010010', lastVisit: '2025-02-22', doctor: 'Dr. Ana Reyes'    },
+  { id: 'P011', name: 'Eduardo Flores',   contact: '+63 918 1111011', lastVisit: '2025-06-12', doctor: 'Dr. Reyna Torres' },
+  { id: 'P012', name: 'Grace Villanueva', contact: '+63 912 1212012', lastVisit: '2025-01-15', doctor: 'Dr. James Lim'    },
 ];
 
 const INIT_QUEUE = [
-  { id: 'Q001', num: 1, name: 'John Doe',       contact: '',             doctor: 'Dr. Sarah Smith',  type: 'appointment', reason: 'Regular checkup',    status: 'completed', arrival: '08:00' },
-  { id: 'Q002', num: 2, name: 'Jane Smith',      contact: '',             doctor: 'Dr. Michael Chen', type: 'appointment', reason: 'Follow-up visit',    status: 'completed', arrival: '08:15' },
-  { id: 'Q003', num: 3, name: 'Robert Johnson',  contact: '',             doctor: 'Dr. James Lim',    type: 'appointment', reason: 'Blood pressure',     status: 'completed', arrival: '09:00' },
-  { id: 'Q004', num: 4, name: 'Maria Santos',    contact: '+63 912 0001', doctor: 'Dr. Sarah Smith',  type: 'walkin',      reason: 'Fever & cough',      status: 'ongoing',   arrival: '09:20' },
-  { id: 'Q005', num: 5, name: 'Carlos Reyes',    contact: '',             doctor: 'Dr. Reyna Torres', type: 'appointment', reason: 'Annual physical',    status: 'called',    arrival: '10:00' },
-  { id: 'Q006', num: 6, name: 'Ana Cruz',        contact: '+63 917 0002', doctor: 'Dr. Ana Reyes',    type: 'walkin',      reason: 'Skin rash',          status: 'waiting',   arrival: '10:15' },
-  { id: 'Q007', num: 7, name: 'Ben Torres',      contact: '',             doctor: 'Dr. Michael Chen', type: 'appointment', reason: 'Diabetes follow-up', status: 'waiting',   arrival: '11:00' },
-  { id: 'Q008', num: 8, name: 'Carla Mendoza',   contact: '+63 919 0003', doctor: 'Dr. James Lim',    type: 'walkin',      reason: 'Asthma checkup',     status: 'waiting',   arrival: '11:15' },
+  { id: 'Q001', num: 1, name: 'John Doe',      contact: '',             doctor: 'Dr. Sarah Smith',  type: 'appointment', reason: 'Regular checkup',    status: 'completed', arrival: '08:00' },
+  { id: 'Q002', num: 2, name: 'Jane Smith',     contact: '',             doctor: 'Dr. Michael Chen', type: 'appointment', reason: 'Follow-up visit',    status: 'completed', arrival: '08:15' },
+  { id: 'Q003', num: 3, name: 'Robert Johnson', contact: '',             doctor: 'Dr. James Lim',    type: 'appointment', reason: 'Blood pressure',     status: 'completed', arrival: '09:00' },
+  { id: 'Q004', num: 4, name: 'Maria Santos',   contact: '+63 912 0001', doctor: 'Dr. Sarah Smith',  type: 'walkin',      reason: 'Fever & cough',      status: 'ongoing',   arrival: '09:20' },
+  { id: 'Q005', num: 5, name: 'Carlos Reyes',   contact: '',             doctor: 'Dr. Reyna Torres', type: 'appointment', reason: 'Annual physical',    status: 'called',    arrival: '10:00' },
+  { id: 'Q006', num: 6, name: 'Ana Cruz',       contact: '+63 917 0002', doctor: 'Dr. Ana Reyes',    type: 'walkin',      reason: 'Skin rash',          status: 'waiting',   arrival: '10:15' },
+  { id: 'Q007', num: 7, name: 'Ben Torres',     contact: '',             doctor: 'Dr. Michael Chen', type: 'appointment', reason: 'Diabetes follow-up', status: 'waiting',   arrival: '11:00' },
+  { id: 'Q008', num: 8, name: 'Carla Mendoza',  contact: '+63 919 0003', doctor: 'Dr. James Lim',    type: 'walkin',      reason: 'Asthma checkup',     status: 'waiting',   arrival: '11:15' },
 ];
 
 /* ═══════════════════════════════
@@ -85,7 +85,7 @@ const StatusBadge = ({ status }) => {
 
 const TypeBadge = ({ type }) =>
   type === 'walkin'
-    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-orange-100 text-orange-700"><UserPlus className="w-3 h-3" />Walk-in</span>
+    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700"><UserPlus className="w-3 h-3" />Walk-in</span>
     : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700"><CalendarIcon className="w-3 h-3" />Appt</span>;
 
 const SelectBox = ({ value, onChange, options, placeholder, className = '' }) => (
@@ -126,9 +126,6 @@ const KPICard = ({ label, value, sub, icon: Icon, iconBg, iconColor, accent }) =
 
 /* ═══════════════════════════════
    PATIENT SEARCH INPUT
-   Searchable combobox that looks
-   up PATIENT_DB, or lets you type
-   a brand-new patient name.
 ═══════════════════════════════ */
 function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
   const [query,       setQuery]       = useState(value || '');
@@ -145,7 +142,6 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
     ).slice(0, 6);
   }, [query]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
@@ -176,13 +172,13 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
     if (val.trim() === '') {
       onSelect({ name: '', contact: '', suggestedDoctor: '' });
     } else {
-      onNewPatient(val); // keep name in sync even without selecting
+      onNewPatient(val);
     }
   };
 
   const handleKeyDown = (e) => {
     if (!open) return;
-    const total = results.length + 1; // +1 for "Add new" option
+    const total = results.length + 1;
     if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted(h => Math.min(h + 1, total - 1)); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setHighlighted(h => Math.max(h - 1, -1)); }
     if (e.key === 'Enter') {
@@ -195,7 +191,6 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
 
   return (
     <div ref={wrapRef} className="relative">
-      {/* Input */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
         <input
@@ -208,20 +203,17 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
           autoFocus
           autoComplete="off"
         />
-        {/* Indicator badge */}
         {query && (
           <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-            isNew ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'
+            isNew ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
           }`}>
             {isNew ? 'NEW' : value ? '✓' : ''}
           </span>
         )}
       </div>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
-          {/* Existing matches */}
           {results.length > 0 && (
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 pt-2.5 pb-1">Existing Patients</p>
@@ -247,21 +239,19 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
             </div>
           )}
 
-          {/* No match message */}
           {results.length === 0 && query.trim() && (
             <p className="text-xs text-gray-400 px-3 pt-3 pb-1">No existing patient found for "<span className="font-semibold text-gray-600">{query}</span>"</p>
           )}
 
-          {/* Add as new patient option */}
           <button
             onMouseDown={handleUseAsNew}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${highlighted === results.length ? 'bg-orange-50' : 'hover:bg-orange-50'}`}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${highlighted === results.length ? 'bg-blue-50' : 'hover:bg-blue-50'}`}
           >
-            <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
-              <PlusCircle className="w-4 h-4 text-orange-600" />
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <PlusCircle className="w-4 h-4 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm font-bold text-orange-700">Add "<span>{query}</span>" as new patient</p>
+              <p className="text-sm font-bold text-blue-700">Add "<span>{query}</span>" as new patient</p>
               <p className="text-xs text-gray-400">Create a new patient record</p>
             </div>
           </button>
@@ -272,7 +262,7 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
 }
 
 /* ═══════════════════════════════
-   WALK-IN MODAL (updated)
+   WALK-IN MODAL
 ═══════════════════════════════ */
 const EMPTY_FORM = { name: '', contact: '', doctor: '', reason: '', isExisting: false };
 
@@ -285,7 +275,6 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
     setErrors(e => ({ ...e, [k]: '' }));
   };
 
-  // Called when an existing patient is selected from dropdown
   const handlePatientSelect = ({ name, contact, suggestedDoctor }) => {
     setForm(f => ({
       ...f,
@@ -297,7 +286,6 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
     setErrors(e => ({ ...e, name: '' }));
   };
 
-  // Called when typing a new name
   const handleNewPatient = (name) => {
     setForm(f => ({ ...f, name, isExisting: false }));
     setErrors(e => ({ ...e, name: '' }));
@@ -318,13 +306,13 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
-              <UserPlus className="w-5 h-5 text-orange-600" />
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+              <UserPlus className="w-5 h-5 text-blue-600" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">Add Walk-in Patient</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                Will be assigned Queue <span className="font-bold text-orange-600">#{String(nextNum).padStart(2, '0')}</span>
+                Will be assigned Queue <span className="font-bold text-blue-600">#{String(nextNum).padStart(2, '0')}</span>
               </p>
             </div>
           </div>
@@ -336,7 +324,6 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
         {/* Body */}
         <div className="p-6 space-y-4">
 
-          {/* ── Patient Search ── */}
           <FieldRow label="Patient Name" required>
             <PatientSearchInput
               value={form.name}
@@ -344,7 +331,6 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
               onSelect={handlePatientSelect}
               onNewPatient={handleNewPatient}
             />
-            {/* Existing patient info pill */}
             {form.isExisting && form.name && (
               <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1.5 bg-green-50 border border-green-200 rounded-lg">
                 <UserCheck className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
@@ -352,15 +338,14 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
               </div>
             )}
             {!form.isExisting && form.name && (
-              <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1.5 bg-orange-50 border border-orange-200 rounded-lg">
-                <PlusCircle className="w-3.5 h-3.5 text-orange-600 flex-shrink-0" />
-                <span className="text-xs font-semibold text-orange-700">New patient — will be added to records</span>
+              <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                <PlusCircle className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-blue-700">New patient — will be added to records</span>
               </div>
             )}
             {errors.name && <p className="text-xs text-red-500">⚠ {errors.name}</p>}
           </FieldRow>
 
-          {/* Contact */}
           <FieldRow label="Contact Number">
             <input
               value={form.contact}
@@ -370,7 +355,6 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
             />
           </FieldRow>
 
-          {/* Doctor */}
           <FieldRow label="Assign Doctor">
             <SelectBox
               value={form.doctor}
@@ -380,7 +364,6 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
             />
           </FieldRow>
 
-          {/* Reason */}
           <FieldRow label="Reason for Visit" required>
             <input
               value={form.reason}
@@ -392,9 +375,9 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
           </FieldRow>
 
           {/* Preview */}
-          <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 flex items-center justify-between">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-9 h-9 rounded-xl bg-orange-500 text-white font-black text-lg flex items-center justify-center">
+              <span className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-lg flex items-center justify-center">
                 {String(nextNum).padStart(2, '0')}
               </span>
               <div>
@@ -408,7 +391,7 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
                 <span className="text-[10px] bg-green-100 text-green-700 font-bold px-1.5 py-0.5 rounded-full">Existing</span>
               )}
               {!form.isExisting && form.name && (
-                <span className="text-[10px] bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded-full">New</span>
+                <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full">New</span>
               )}
             </div>
           </div>
@@ -420,7 +403,7 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
           <Button
             onClick={() => { if (validate()) onSave(form); }}
             disabled={saving}
-            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white border-0"
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-0"
           >
             {saving
               ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Adding…</>
@@ -493,7 +476,7 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onRemove, onAddWalkin }) {
           </div>
           <div className="flex-1" />
           <button onClick={() => onAddWalkin(doctor.name)}
-            className="flex items-center gap-1 text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-2 py-1 rounded-lg border border-orange-200 transition-colors">
+            className="flex items-center gap-1 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg border border-blue-200 transition-colors">
             <UserPlus className="w-3 h-3" /> Walk-in
           </button>
         </div>
@@ -506,7 +489,7 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onRemove, onAddWalkin }) {
               {serving.status === 'ongoing' ? '● Now Serving' : '◎ Called'}
             </p>
             <div className="flex items-center gap-2 mb-2">
-              <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm text-white flex-shrink-0 ${serving.status === 'ongoing' ? 'bg-green-500' : 'bg-blue-500'}`}>
+              <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm text-white flex-shrink-0 ${serving.status === 'ongoing' ? 'bg-green-500' : 'bg-blue-600'}`}>
                 {String(serving.num).padStart(2, '0')}
               </span>
               <div className="min-w-0">
@@ -669,7 +652,7 @@ export default function QueuePanel() {
               </button>
             </div>
             <Button onClick={() => setModal({ type: 'walkin', preDoctor: '' })}
-              className="bg-orange-500 hover:bg-orange-600 text-white">
+              className="bg-blue-600 hover:bg-blue-700 text-white">
               <UserPlus className="w-4 h-4 mr-2" /> Add Walk-in
             </Button>
           </div>
@@ -690,7 +673,7 @@ export default function QueuePanel() {
             sub={nextWaiting ? nextWaiting.name : 'Queue is clear'}
             icon={Bell} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
           <KPICard label="Walk-ins Today" value={walkinToday}
-            icon={UserPlus} iconBg="bg-orange-50" iconColor="text-orange-600" />
+            icon={UserPlus} iconBg="bg-blue-50" iconColor="text-blue-600" />
         </div>
 
         {/* ── LEGEND ── */}
@@ -775,7 +758,7 @@ export default function QueuePanel() {
                         <tr key={q.id} className={`transition-colors ${isOngoing ? 'bg-green-50/40' : isCalled ? 'bg-blue-50/40' : isDone ? 'opacity-50' : 'hover:bg-gray-50'}`}>
                           <td className="py-3 px-3">
                             <span className={`inline-flex w-9 h-9 rounded-xl items-center justify-center font-black text-sm
-                              ${isOngoing ? 'bg-green-500 text-white' : isCalled ? 'bg-blue-500 text-white' : isDone ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-700'}`}>
+                              ${isOngoing ? 'bg-green-500 text-white' : isCalled ? 'bg-blue-600 text-white' : isDone ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-700'}`}>
                               {String(q.num).padStart(2, '0')}
                             </span>
                           </td>

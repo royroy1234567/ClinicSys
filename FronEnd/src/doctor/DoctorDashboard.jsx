@@ -403,44 +403,7 @@ export default function DoctorDashboard() {
             </CardContent>
           </Card>
 
-          {/* C — Patient Type */}
-          <Card className="border border-gray-100 shadow-sm">
-            <CardHeader className="pb-1 pt-5 px-5">
-              <CardTitle className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-500" /> Patient Type Distribution
-              </CardTitle>
-              <p className="text-xs text-gray-400 mt-0.5">CRM overview</p>
-            </CardHeader>
-            <CardContent className="pb-4">
-              <div className="flex items-center justify-between">
-                <ResponsiveContainer width="55%" height={160}>
-                  <PieChart>
-                    <Pie
-                      data={TYPE_DATA} cx="50%" cy="50%"
-                      innerRadius={38} outerRadius={62}
-                      dataKey="value" paddingAngle={3}
-                    >
-                      {TYPE_DATA.map((e, i) => <Cell key={i} fill={e.color} />)}
-                    </Pie>
-                    <Tooltip content={<ChartTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex-1 space-y-2.5 pr-4">
-                  {TYPE_DATA.map(t => (
-                    <div key={t.name}>
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-xs font-semibold text-gray-600">{t.name}</span>
-                        <span className="text-xs font-bold text-gray-800">{t.value}%</span>
-                      </div>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width:`${t.value}%`, backgroundColor:t.color }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        
         </div>
 
       </div>

@@ -2,14 +2,11 @@ import React, { useEffect, useState } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Switch } from '../components/ui/switch';
 import {
-  Plus, Edit, Trash2, Search, ChevronDown, Eye, EyeOff,
+  Search, ChevronDown, Check, X,
   Shield, Stethoscope, Users, UserCheck, UserX, KeyRound,
-  X, Check, AlertTriangle, RefreshCw,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Loader2, Briefcase, Settings, Lock, ArchiveX, ToggleLeft,
-  UserCog, Archive,
+  Briefcase, Eye,
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -23,9 +20,8 @@ const ROLE_CONFIG = {
   staff:   { label: 'Staff',   icon: Users,        bg: 'bg-teal-100',   color: 'text-teal-700',   border: 'border-teal-200',   access: ['Dashboard', 'Register Patient', 'Appointment Scheduling', 'Queue Management', 'CRM Follow-ups'] },
 };
 
-const ROLES        = ['All Roles', 'Manager', 'Admin', 'Doctor', 'Staff'];
-const STATUSES     = ['All Status', 'Active', 'Inactive'];
-const ROLE_OPTIONS = ['manager', 'admin', 'doctor', 'staff'];
+const ROLES    = ['All Roles', 'Manager', 'Admin', 'Doctor', 'Staff'];
+const STATUSES = ['All Status', 'Active', 'Inactive'];
 
 /* ══════════════ HELPERS ══════════════ */
 const apiFetch = async (path, options = {}) => {
@@ -75,16 +71,14 @@ const SelectBox = ({ value, onChange, options }) => (
   </div>
 );
 
-const FieldRow = ({ label, required, children }) => (
-  <div className="space-y-1.5">
-    <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">
-      {label} {required && <span className="text-red-500">*</span>}
-    </label>
-    {children}
+const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
+
+const InfoRow = ({ label, value }) => (
+  <div className="flex flex-col gap-0.5">
+    <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">{label}</span>
+    <span className="text-sm text-gray-800 font-medium">{value || <span className="text-gray-300">—</span>}</span>
   </div>
 );
-
-const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
 
 /* ══════════════ KPI CARD ══════════════ */
 const KPICard = ({ label, value, icon: Icon, iconBg, iconColor, loading }) => (
@@ -162,226 +156,28 @@ function Pagination({ currentPage, totalPages, totalItems, pageSize, onPageChang
   );
 }
 
-/* ══════════════ PASSWORD GATE MODAL ══════════════ */
-function PasswordGateModal({ user, onClose, onSuccess }) {
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [error, setError]       = useState('');
-  const [checking, setChecking] = useState(false);
-
-  const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
+/* ══════════════ VIEW USER MODAL ══════════════ */
+function ViewUserModal({ user, onClose }) {
   const role     = user.role?.toLowerCase();
+  const status   = user.status?.toLowerCase();
   const cfg      = ROLE_CONFIG[role];
-  const Icon     = cfg?.icon ?? UserCog;
-
-  const handleVerify = async () => {
-    if (!password.trim()) { setError('Please enter your password.'); return; }
-    setChecking(true);
-    setError('');
-    try {
-      // Replace with your real auth-verify endpoint if available
-      const { ok, data } = await apiFetch('/auth/verify-password', {
-        method: 'POST',
-        body: JSON.stringify({ password }),
-      });
-      if (ok) {
-        onSuccess();
-      } else {
-        setError(data.message ?? 'Incorrect password. Please try again.');
-      }
-    } catch {
-      // For demo/dev: allow bypass if endpoint doesn't exist yet
-      onSuccess();
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-50">
-              <Lock className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-gray-900">Authentication Required</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Enter your password to continue</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="w-4 h-4 text-gray-400" />
-          </button>
-        </div>
-
-        {/* User preview */}
-        <div className="px-6 py-4">
-          <div className={`flex items-center gap-3 p-3 rounded-xl border ${cfg?.border ?? 'border-gray-200'} ${cfg?.bg ?? 'bg-gray-50'} mb-5`}>
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${cfg?.bg ?? 'bg-gray-100'} ${cfg?.color ?? 'text-gray-600'}`}>
-              {`${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase()}
-            </div>
-            <div>
-              <p className={`text-sm font-bold ${cfg?.color ?? 'text-gray-800'}`}>{fullName}</p>
-              <p className="text-xs text-gray-400">@{user.username}</p>
-            </div>
-            <div className="ml-auto">
-              <RoleBadge role={role} />
-            </div>
-          </div>
-
-          <FieldRow label="Your Password" required>
-            <div className="relative">
-              <input
-                type={showPw ? 'text' : 'password'}
-                value={password}
-                onChange={e => { setPassword(e.target.value); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleVerify()}
-                placeholder="Enter your password"
-                autoFocus
-                className={`${inputCls} pr-10 ${error ? 'border-red-300 focus:ring-red-400' : ''}`}
-              />
-              <button type="button" onClick={() => setShowPw(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {error && <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {error}</p>}
-          </FieldRow>
-        </div>
-
-        <div className="flex gap-2 px-6 pb-6">
-          <Button variant="outline" onClick={onClose} className="flex-1" disabled={checking}>Cancel</Button>
-          <Button onClick={handleVerify} disabled={checking} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
-            {checking ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Verifying…</> : <><Lock className="w-4 h-4 mr-1.5" /> Verify & Continue</>}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════ MANAGE MODAL (3 TABS) ══════════════ */
-function ManageModal({ user, onClose, onSaved, onToggled, onArchived }) {
-  const [activeTab, setActiveTab] = useState('edit');
-  const [saving,    setSaving]    = useState(false);
-  const [errors,    setErrors]    = useState({});
-
-  const role   = user.role?.toLowerCase();
-  const status = user.status?.toLowerCase();
-  const cfg    = ROLE_CONFIG[role];
-
-  // ── Edit form state ──
-  const [showPw,  setShowPw]  = useState(false);
-  const [showCpw, setShowCpw] = useState(false);
-  const [form, setForm] = useState({
-    first_name:     user.first_name     ?? '',
-    last_name:      user.last_name      ?? '',
-    username:       user.username       ?? '',
-    email:          user.email          ?? '',
-    contact_number: user.contact_number ?? '',
-    specialization: user.specialization ?? '',
-    license_number: user.license_number ?? '',
-    role:           role                ?? 'staff',
-  });
-
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
-
-  const validateEdit = () => {
-    const e = {};
-    if (!form.first_name.trim()) e.first_name = 'First name is required';
-    if (!form.last_name.trim())  e.last_name  = 'Last name is required';
-    if (!form.username.trim())   e.username   = 'Username is required';
-    if (!form.email.trim())      e.email      = 'Email is required';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSaveEdit = async () => {
-    if (!validateEdit()) return;
-    setSaving(true);
-    const rawId = getRawId(user);
-    const payload = {
-      first_name:     form.first_name.trim(),
-      last_name:      form.last_name.trim(),
-      username:       form.username.trim(),
-      email:          form.email.trim(),
-      contact_number: form.contact_number?.trim() || null,
-      specialization: form.specialization?.trim() || null,
-      license_number: form.license_number?.trim() || null,
-      role:           form.role.charAt(0).toUpperCase() + form.role.slice(1),
-      status:         user.status,
-    };
-    try {
-      const { ok, data } = await apiFetch(`/users/${rawId}`, { method: 'PUT', body: JSON.stringify(payload) });
-      if (ok) { onSaved(data); }
-      else {
-        const msg = data.errors ? Object.values(data.errors).flat().join(' | ') : data.message ?? 'An error occurred.';
-        setErrors({ server: msg });
-      }
-    } catch {
-      setErrors({ server: 'Network error. Could not reach server.' });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ── Toggle status ──
-  const [toggling, setToggling] = useState(false);
-  const [localStatus, setLocalStatus] = useState(status);
-
-  const handleToggle = async () => {
-    setToggling(true);
-    const rawId     = getRawId(user);
-    const nextStatus = localStatus === 'active' ? 'Inactive' : 'Active';
-    try {
-      const { ok, data } = await apiFetch(`/users/${rawId}/toggle-status`, { method: 'PATCH' });
-      if (ok) {
-        setLocalStatus(data.status?.toLowerCase());
-        onToggled(rawId, data.status);
-      }
-    } catch {}
-    finally { setToggling(false); }
-  };
-
-  // ── Archive ──
-  const [archiveConfirm, setArchiveConfirm] = useState('');
-  const [archiving,      setArchiving]      = useState(false);
+  const RoleIcon = cfg?.icon ?? Users;
   const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim();
-  const archiveMatch = archiveConfirm.trim().toLowerCase() === fullName.toLowerCase();
-
-  const handleArchive = async () => {
-    if (!archiveMatch) return;
-    setArchiving(true);
-    const rawId = getRawId(user);
-    try {
-      const { ok } = await apiFetch(`/users/${rawId}`, { method: 'DELETE' });
-      if (ok) onArchived(rawId);
-    } catch {}
-    finally { setArchiving(false); }
-  };
-
-  const tabs = [
-    { key: 'edit',    label: 'Edit Information',  icon: Edit },
-    { key: 'status',  label: 'Activate / Deactivate', icon: ToggleLeft },
-    { key: 'archive', label: 'Archive Account',   icon: Archive },
-  ];
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${cfg?.bg ?? 'bg-gray-100'} ${cfg?.color ?? 'text-gray-600'}`}>
+            <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${cfg?.bg ?? 'bg-gray-100'} ${cfg?.color ?? 'text-gray-600'}`}>
               {`${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase()}
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">Manage User</h2>
+              <h2 className="text-base font-bold text-gray-900">{fullName}</h2>
               <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-xs text-gray-400">{fullName}</p>
+                <p className="text-xs text-gray-400">@{user.username}</p>
                 <RoleBadge role={role} />
               </div>
             </div>
@@ -391,408 +187,66 @@ function ManageModal({ user, onClose, onSaved, onToggled, onArchived }) {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-100 px-6">
-          {tabs.map(t => {
-            const Icon = t.icon;
-            const isActive = activeTab === t.key;
-            return (
-              <button key={t.key} onClick={() => setActiveTab(t.key)}
-                className={`flex items-center gap-1.5 px-3 py-3 text-xs font-semibold border-b-2 transition-all whitespace-nowrap
-                  ${isActive
-                    ? t.key === 'archive'
-                      ? 'border-red-500 text-red-600'
-                      : 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-400 hover:text-gray-600'
-                  }`}>
-                <Icon className="w-3.5 h-3.5" />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Body */}
+        <div className="p-6 space-y-5">
 
-        {/* ─── TAB: Edit Information ─── */}
-        {activeTab === 'edit' && (
-          <div className="p-6 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <FieldRow label="First Name" required>
-                <input value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="Juan" className={inputCls} />
-                {errors.first_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.first_name}</p>}
-              </FieldRow>
-              <FieldRow label="Last Name" required>
-                <input value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="dela Cruz" className={inputCls} />
-                {errors.last_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.last_name}</p>}
-              </FieldRow>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <FieldRow label="Username" required>
-                <input value={form.username} onChange={e => set('username', e.target.value)} className={inputCls} />
-                {errors.username && <p className="text-xs text-red-500 mt-1">⚠ {errors.username}</p>}
-              </FieldRow>
-              <FieldRow label="Email" required>
-                <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} />
-                {errors.email && <p className="text-xs text-red-500 mt-1">⚠ {errors.email}</p>}
-              </FieldRow>
-            </div>
-            <FieldRow label="Contact Number">
-              <input type="tel" value={form.contact_number} onChange={e => set('contact_number', e.target.value)} placeholder="+63 912 345 6789" className={inputCls} />
-            </FieldRow>
-
-            {/* Role */}
-            <FieldRow label="Role" required>
-              <div className="grid grid-cols-4 gap-2">
-                {ROLE_OPTIONS.map(r => {
-                  const rc = ROLE_CONFIG[r]; const RIcon = rc.icon; const selected = form.role === r;
-                  return (
-                    <button key={r} type="button" onClick={() => set('role', r)}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all
-                        ${selected ? `${rc.bg} ${rc.border} ${rc.color}` : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                      <RIcon className="w-5 h-5" /><span className="text-xs font-bold">{rc.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </FieldRow>
-
-            {/* Doctor fields */}
-            {form.role === 'doctor' && (
-              <div className="grid grid-cols-2 gap-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
-                <p className="col-span-2 text-xs font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1.5">
-                  <Stethoscope className="w-3.5 h-3.5" /> Doctor Details
-                </p>
-                <FieldRow label="Specialization">
-                  <input value={form.specialization} onChange={e => set('specialization', e.target.value)} placeholder="e.g. Cardiology" className={inputCls} />
-                </FieldRow>
-                <FieldRow label="License Number">
-                  <input value={form.license_number} onChange={e => set('license_number', e.target.value)} placeholder="PRC-XXXXX" className={inputCls} />
-                </FieldRow>
-              </div>
-            )}
-
-            {/* Password note */}
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-gray-200 flex-shrink-0">
-                <KeyRound className="w-4 h-4 text-gray-500" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-600">Password Cannot Be Changed Here</p>
-                <p className="text-xs text-gray-400 mt-0.5">Passwords can only be changed by the user through their own account settings.</p>
-              </div>
-            </div>
-
-            {errors.server && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                <p className="text-xs text-red-600 font-semibold">⚠ {errors.server}</p>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-              <Button onClick={handleSaveEdit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white min-w-[130px]">
-                {saving ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Saving…</> : <><Check className="w-4 h-4 mr-1.5" /> Save Changes</>}
-              </Button>
-            </div>
+          {/* Status */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Account Status</span>
+            <StatusBadge status={status} />
           </div>
-        )}
 
-        {/* ─── TAB: Activate / Deactivate ─── */}
-        {activeTab === 'status' && (
-          <div className="p-6 space-y-5">
-            <div className={`rounded-xl border p-5 ${localStatus === 'active' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-sm font-bold text-gray-800">Current Status</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Toggle to change this user's account status</p>
-                </div>
-                <StatusBadge status={localStatus} />
-              </div>
-
-              <div className="flex items-center gap-4 mt-4">
-                <Switch checked={localStatus === 'active'} onCheckedChange={handleToggle} disabled={toggling} />
-                <div>
-                  <p className="text-sm font-semibold text-gray-700">
-                    {localStatus === 'active' ? 'Account is Active' : 'Account is Inactive'}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {localStatus === 'active'
-                      ? 'This user can log in and access the system.'
-                      : 'This user is blocked from logging in.'}
-                  </p>
-                </div>
-                {toggling && <Loader2 className="w-4 h-4 animate-spin text-blue-500 ml-auto" />}
-              </div>
-            </div>
-
-            <div className={`rounded-xl border p-4 ${localStatus === 'active' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
-              <div className={`flex items-start gap-2 text-xs ${localStatus === 'active' ? 'text-amber-700' : 'text-blue-700'}`}>
-                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">
-                    {localStatus === 'active' ? 'Deactivating this account will:' : 'Activating this account will:'}
-                  </p>
-                  <ul className="mt-1.5 space-y-1 list-disc list-inside">
-                    {localStatus === 'active' ? (
-                      <>
-                        <li>Immediately log out the user from all sessions</li>
-                        <li>Prevent the user from logging in</li>
-                        <li>Preserve all existing data and records</li>
-                      </>
-                    ) : (
-                      <>
-                        <li>Allow the user to log in again</li>
-                        <li>Restore full access based on their role</li>
-                        <li>Send a notification email to the user</li>
-                      </>
-                    )}
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <Button variant="outline" onClick={onClose}>Close</Button>
-            </div>
+          {/* Basic Info */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <InfoRow label="First Name"   value={user.first_name} />
+            <InfoRow label="Last Name"    value={user.last_name} />
+            <InfoRow label="Username"     value={user.username} />
+            <InfoRow label="Email"        value={user.email} />
+            <InfoRow label="Contact"      value={user.contact_number} />
+            <InfoRow label="Date Created" value={user.created_at ? new Date(user.created_at).toLocaleDateString() : null} />
           </div>
-        )}
 
-        {/* ─── TAB: Archive Account ─── */}
-        {activeTab === 'archive' && (
-          <div className="p-6 space-y-5">
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-start gap-3">
-              <div className="p-2 rounded-lg bg-red-100 flex-shrink-0">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-red-700">This action is irreversible</p>
-                <p className="text-xs text-red-500 mt-1">
-                  Archiving will permanently remove this user's access and mark the account as archived. 
-                  Data is preserved for audit purposes but the account cannot be recovered.
-                </p>
-              </div>
-            </div>
-
-            {/* User info */}
-            <div className={`flex items-center gap-3 p-4 rounded-xl border ${cfg?.border ?? 'border-gray-200'} ${cfg?.bg ?? 'bg-gray-50'}`}>
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${cfg?.bg ?? 'bg-gray-100'} ${cfg?.color ?? 'text-gray-600'}`}>
-                {`${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-bold text-gray-800">{fullName}</p>
-                <p className="text-xs text-gray-400">{user.email}</p>
-              </div>
-              <RoleBadge role={role} />
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-gray-500 font-medium">
-                What will happen when you archive this account:
+          {/* Doctor-specific */}
+          {role === 'doctor' && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <p className="text-xs font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1.5 mb-3">
+                <Stethoscope className="w-3.5 h-3.5" /> Doctor Details
               </p>
-              <ul className="space-y-2">
-                {[
-                  'User will be immediately logged out',
-                  'Login access will be permanently revoked',
-                  'All data and records are preserved',
-                  'Account will be marked as archived',
-                  'This action cannot be undone',
-                ].map((item, i) => (
-                  <li key={i} className={`flex items-center gap-2 text-xs ${i === 4 ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                    {i === 4
-                      ? <X className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                      : <Check className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
-                    {item}
+              <InfoRow label="License Number" value={user.license_number} />
+            </div>
+          )}
+
+          {/* Role access */}
+          {cfg && (
+            <div className={`rounded-xl border p-4 ${cfg.bg} ${cfg.border}`}>
+              <p className={`text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 mb-2 ${cfg.color}`}>
+                <RoleIcon className="w-3.5 h-3.5" /> Role Access
+              </p>
+              <ul className="space-y-1.5">
+                {cfg.access.map(a => (
+                  <li key={a} className={`flex items-center gap-1.5 text-xs font-medium ${cfg.color}`}>
+                    <Check className="w-3 h-3 flex-shrink-0" /> {a}
                   </li>
                 ))}
               </ul>
             </div>
+          )}
 
-            {/* Confirmation input */}
-            <FieldRow label={`Type "${fullName}" to confirm`} required>
-              <input
-                value={archiveConfirm}
-                onChange={e => setArchiveConfirm(e.target.value)}
-                placeholder={fullName}
-                className={`${inputCls} ${archiveConfirm && !archiveMatch ? 'border-red-300 focus:ring-red-400' : ''} ${archiveMatch ? 'border-green-400 focus:ring-green-400' : ''}`}
-              />
-              {archiveConfirm && !archiveMatch && (
-                <p className="text-xs text-red-500 mt-1">⚠ Name does not match</p>
-              )}
-              {archiveMatch && (
-                <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Check className="w-3 h-3" /> Confirmed</p>
-              )}
-            </FieldRow>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={onClose} disabled={archiving}>Cancel</Button>
-              <Button
-                onClick={handleArchive}
-                disabled={!archiveMatch || archiving}
-                className="bg-red-600 hover:bg-red-700 text-white min-w-[150px] disabled:opacity-40">
-                {archiving
-                  ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Archiving…</>
-                  : <><ArchiveX className="w-4 h-4 mr-1.5" /> Archive Account</>}
-              </Button>
+          {/* Password note */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-gray-200 flex-shrink-0">
+              <KeyRound className="w-4 h-4 text-gray-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-600">Password Hidden</p>
+              <p className="text-xs text-gray-400 mt-0.5">Passwords are not visible for security reasons.</p>
             </div>
           </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════ ADD USER MODAL ══════════════ */
-function AddUserModal({ onClose, onSave, saving }) {
-  const [showPw,  setShowPw]  = useState(false);
-  const [showCpw, setShowCpw] = useState(false);
-  const [errors,  setErrors]  = useState({});
-
-  const blankForm = {
-    first_name: '', last_name: '', username: '', email: '',
-    contact_number: '', specialization: '', license_number: '',
-    role: 'staff', status: 'active', password: '', confirmPassword: '',
-  };
-
-  const [form, setForm] = useState(blankForm);
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
-
-  const validate = () => {
-    const e = {};
-    if (!form.first_name.trim()) e.first_name = 'First name is required';
-    if (!form.last_name.trim())  e.last_name  = 'Last name is required';
-    if (!form.username.trim())   e.username   = 'Username is required';
-    if (!form.email.trim())      e.email      = 'Email is required';
-    if (!form.password)                         e.password        = 'Password is required';
-    else if (form.password.length < 8)          e.password        = 'Min. 8 characters';
-    if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSubmit = () => { if (!validate()) return; onSave(form); };
-  const roleCfg = ROLE_CONFIG[form.role];
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Create New User</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Fill in the details below</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="First Name" required>
-              <input value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="Juan" className={inputCls} />
-              {errors.first_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.first_name}</p>}
-            </FieldRow>
-            <FieldRow label="Last Name" required>
-              <input value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="dela Cruz" className={inputCls} />
-              {errors.last_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.last_name}</p>}
-            </FieldRow>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Username" required>
-              <input value={form.username} onChange={e => set('username', e.target.value)} placeholder="juan.delacruz" className={inputCls} />
-              {errors.username && <p className="text-xs text-red-500 mt-1">⚠ {errors.username}</p>}
-            </FieldRow>
-            <FieldRow label="Email" required>
-              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="juan@clinic.com" className={inputCls} />
-              {errors.email && <p className="text-xs text-red-500 mt-1">⚠ {errors.email}</p>}
-            </FieldRow>
-          </div>
-          <FieldRow label="Contact Number">
-            <input type="tel" value={form.contact_number} onChange={e => set('contact_number', e.target.value)} placeholder="+63 912 345 6789" className={inputCls} />
-          </FieldRow>
-          <FieldRow label="Role" required>
-            <div className="grid grid-cols-4 gap-2">
-              {ROLE_OPTIONS.map(r => {
-                const cfg = ROLE_CONFIG[r]; const Icon = cfg.icon; const selected = form.role === r;
-                return (
-                  <button key={r} type="button" onClick={() => set('role', r)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all
-                      ${selected ? `${cfg.bg} ${cfg.border} ${cfg.color}` : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                    <Icon className="w-5 h-5" /><span className="text-xs font-bold">{cfg.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {roleCfg && (
-              <div className={`mt-2 rounded-lg p-3 ${roleCfg.bg} border ${roleCfg.border}`}>
-                <p className={`text-xs font-bold ${roleCfg.color} mb-1`}>Access:</p>
-                {roleCfg.access.map(a => (
-                  <p key={a} className={`text-xs ${roleCfg.color} flex items-center gap-1`}><Check className="w-3 h-3" /> {a}</p>
-                ))}
-              </div>
-            )}
-          </FieldRow>
-          {form.role === 'doctor' && (
-            <div className="grid grid-cols-2 gap-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
-              <p className="col-span-2 text-xs font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1.5">
-                <Stethoscope className="w-3.5 h-3.5" /> Doctor Details
-              </p>
-              <FieldRow label="Specialization">
-                <input value={form.specialization} onChange={e => set('specialization', e.target.value)} placeholder="e.g. Cardiology" className={inputCls} />
-              </FieldRow>
-              <FieldRow label="License Number">
-                <input value={form.license_number} onChange={e => set('license_number', e.target.value)} placeholder="PRC-XXXXX" className={inputCls} />
-              </FieldRow>
-            </div>
-          )}
-          <FieldRow label="Status">
-            <div className="flex items-center gap-3">
-              <Switch checked={form.status === 'active'} onCheckedChange={v => set('status', v ? 'active' : 'inactive')} />
-              <StatusBadge status={form.status} />
-            </div>
-          </FieldRow>
-          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5" /> Set Password
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <FieldRow label="Password" required>
-                <div className="relative">
-                  <input type={showPw ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)} placeholder="Min. 8 characters" className={`${inputCls} pr-10`} />
-                  <button type="button" onClick={() => setShowPw(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.password && <p className="text-xs text-red-500 mt-1">⚠ {errors.password}</p>}
-              </FieldRow>
-              <FieldRow label="Confirm Password" required>
-                <div className="relative">
-                  <input type={showCpw ? 'text' : 'password'} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} placeholder="Re-enter" className={`${inputCls} pr-10`} />
-                  <button type="button" onClick={() => setShowCpw(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    {showCpw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">⚠ {errors.confirmPassword}</p>}
-              </FieldRow>
-            </div>
-          </div>
-          {errors.server && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-              <p className="text-xs text-red-600 font-semibold">⚠ {errors.server}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-          <button onClick={() => setForm(blankForm)} className="text-sm text-gray-400 hover:text-gray-600 font-medium flex items-center gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" /> Clear Form
-          </button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]">
-              {saving ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Saving…</> : <><Check className="w-4 h-4 mr-1.5" />Create User</>}
-            </Button>
-          </div>
+        {/* Footer */}
+        <div className="flex justify-end px-6 pb-6">
+          <Button variant="outline" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>
@@ -803,12 +257,10 @@ function AddUserModal({ onClose, onSave, saving }) {
 export default function UserManagementPage() {
   const [users,       setUsers]       = useState([]);
   const [loading,     setLoading]     = useState(true);
-  const [saving,      setSaving]      = useState(false);
   const [search,      setSearch]      = useState('');
   const [roleFilter,  setRoleFilter]  = useState('All Roles');
   const [statusFil,   setStatusFil]   = useState('All Status');
-  const [modal,       setModal]       = useState(null);
-  // modal states: null | { type: 'add' } | { type: 'password-gate', user } | { type: 'manage', user }
+  const [viewUser,    setViewUser]    = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize,    setPageSize]    = useState(10);
 
@@ -843,57 +295,11 @@ export default function UserManagementPage() {
   const doctors  = users.filter(u => u.role?.toLowerCase() === 'doctor').length;
   const staff    = users.filter(u => u.role?.toLowerCase() === 'staff').length;
 
-  /* ── add user ── */
-  const handleAddSave = async (form) => {
-    setSaving(true);
-    const payload = {
-      first_name: form.first_name.trim(), last_name: form.last_name.trim(),
-      username: form.username.trim(), email: form.email.trim(),
-      contact_number: form.contact_number?.trim() || null,
-      specialization: form.specialization?.trim() || null,
-      license_number: form.license_number?.trim() || null,
-      role:   form.role.charAt(0).toUpperCase()   + form.role.slice(1),
-      status: form.status.charAt(0).toUpperCase() + form.status.slice(1),
-      password: form.password,
-    };
-    try {
-      const { ok, data } = await apiFetch('/users', { method: 'POST', body: JSON.stringify(payload) });
-      if (ok) {
-        await fetchUsers();
-        toast({ title: 'User created', description: `${data.first_name} ${data.last_name} saved.` });
-        setModal(null);
-      } else {
-        const msg = data.errors ? Object.values(data.errors).flat().join(' | ') : data.message ?? 'An error occurred.';
-        toast({ title: 'Validation Error', description: msg, variant: 'destructive' });
-      }
-    } catch {
-      toast({ title: 'Network error', description: 'Could not reach the server.', variant: 'destructive' });
-    } finally { setSaving(false); }
-  };
-
-  /* ── manage callbacks ── */
-  const handleManageSaved = async (data) => {
-    await fetchUsers();
-    toast({ title: 'User updated', description: `${data.first_name} ${data.last_name} saved.` });
-    setModal(null);
-  };
-
-  const handleManageToggled = (rawId, newStatus) => {
-    setUsers(u => u.map(x => getRawId(x) === rawId ? { ...x, status: newStatus } : x));
-    toast({ title: 'Status updated', description: `Account is now ${newStatus}.` });
-  };
-
-  const handleManageArchived = (rawId) => {
-    setUsers(u => u.filter(x => getRawId(x) !== rawId));
-    toast({ title: 'Account archived', description: 'The user has been archived.' });
-    setModal(null);
-  };
-
   const fullName = (u) => `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim();
   const initials = (u) => `${u.first_name?.[0] ?? ''}${u.last_name?.[0] ?? ''}`.toUpperCase();
 
   return (
-    <MainLayout title="User Management" subtitle="Manage system users, roles and access control">
+    <MainLayout title="User Management" subtitle="View system users, roles and access control">
       <div className="space-y-5">
 
         {/* KPI CARDS */}
@@ -965,10 +371,6 @@ export default function UserManagementPage() {
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Status</label>
                   <SelectBox value={statusFil} onChange={setStatusFil} options={STATUSES} />
                 </div>
-                <div className="flex-1" />
-                <Button onClick={() => setModal({ type: 'add' })} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  <Plus className="w-4 h-4 mr-2" /> Create User
-                </Button>
               </div>
             </CardContent>
 
@@ -1001,8 +403,6 @@ export default function UserManagementPage() {
                     const status = user.status?.toLowerCase();
                     return (
                       <tr key={getRawId(user)} className={`hover:bg-gray-50 transition-colors ${status === 'inactive' ? 'opacity-60' : ''}`}>
-
-                        {/* Name */}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm
@@ -1016,36 +416,17 @@ export default function UserManagementPage() {
                             </div>
                           </div>
                         </td>
-
-                        {/* Role */}
-                        <td className="py-3 px-4">
-                          <div className="space-y-1">
-                            <RoleBadge role={role} />
-                            {user.specialization && <p className="text-xs text-gray-400">{user.specialization}</p>}
-                          </div>
-                        </td>
-
-                        {/* Contact */}
+                        <td className="py-3 px-4"><RoleBadge role={role} /></td>
                         <td className="py-3 px-4 text-xs text-gray-500">{user.contact_number || '—'}</td>
-
-                        {/* Status — badge only, no toggle */}
-                        <td className="py-3 px-4">
-                          <StatusBadge status={status} />
-                        </td>
-
-                        {/* Date */}
+                        <td className="py-3 px-4"><StatusBadge status={status} /></td>
                         <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">
                           {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}
                         </td>
-
-                        {/* Actions — single Manage button */}
                         <td className="py-3 px-4">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-3 text-xs gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-400"
-                            onClick={() => setModal({ type: 'password-gate', user })}>
-                            <UserCog className="w-3.5 h-3.5" /> Manage
+                          <Button size="sm" variant="outline"
+                            className="h-7 px-3 text-xs gap-1.5 border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-400"
+                            onClick={() => setViewUser(user)}>
+                            <Eye className="w-3.5 h-3.5" /> View
                           </Button>
                         </td>
                       </tr>
@@ -1065,27 +446,8 @@ export default function UserManagementPage() {
 
       </div>
 
-      {/* ── Modals ── */}
-      {modal?.type === 'add' && (
-        <AddUserModal onClose={() => !saving && setModal(null)} onSave={handleAddSave} saving={saving} />
-      )}
-
-      {modal?.type === 'password-gate' && (
-        <PasswordGateModal
-          user={modal.user}
-          onClose={() => setModal(null)}
-          onSuccess={() => setModal({ type: 'manage', user: modal.user })}
-        />
-      )}
-
-      {modal?.type === 'manage' && (
-        <ManageModal
-          user={modal.user}
-          onClose={() => setModal(null)}
-          onSaved={handleManageSaved}
-          onToggled={handleManageToggled}
-          onArchived={handleManageArchived}
-        />
+      {viewUser && (
+        <ViewUserModal user={viewUser} onClose={() => setViewUser(null)} />
       )}
     </MainLayout>
   );
