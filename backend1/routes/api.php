@@ -7,7 +7,9 @@ use App\Http\Controllers\GoogleController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DoctorScheduleController;
 use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\QueueEntriesController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\ClinicSettingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -33,6 +35,7 @@ Route::get('/auth/google/callback', [GoogleController::class, 'handleGoogleCallb
 // Patient public routes
 Route::post('/patients/register',    [PatientsController::class, 'register']);
 Route::post('/patients/check-email', [PatientsController::class, 'checkEmail']);
+Route::get('/clinic-settings', [ClinicSettingController::class, 'index']);
 
 /*
 |--------------------------------------------------------------------------
@@ -47,6 +50,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Password gate (shared — used by Manage User modal AND View Patient modal)
     Route::post('/auth/verify-password', [AuthController::class, 'verifyPassword']);
+    Route::get('/auth/me', [AuthController::class, 'me']); // ← dagdag
+    Route::post('clinic-settings', [ClinicSettingController::class, 'update']); 
 
     // Clinic Users
     Route::apiResource('users', ClinicUsersController::class);
@@ -77,6 +82,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/',       [AppointmentController::class, 'store']);
         Route::delete('/{id}', [AppointmentController::class, 'destroy']);
     });
+
+    Route::prefix('queue-entries')->group(function () {
+        Route::get('/', [QueueEntriesController::class, 'index']);
+        Route::post('/walkin', [QueueEntriesController::class, 'storeWalkin']);
+        Route::patch('/{id}/status', [QueueEntriesController::class, 'updateStatus']);
+    });
+    Route::post('/appointments/{id}/check-in', [QueueEntriesController::class, 'checkInAppointment']);
 
     // Transactions (POS)
     Route::prefix('transactions')->group(function () {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -7,12 +7,35 @@ import {
   Building2, Palette, Bell, Shield, Database, Save, RefreshCw,
   Check, ChevronRight, Sun, Moon, Monitor, Globe, Clock, Phone,
   Mail, MapPin, Upload, Eye, EyeOff, AlertTriangle, Info,
-  Printer, Wifi, HardDrive, Trash2, Download,
+  HardDrive, Trash2, Download, Loader2,
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
+
+/* ── API helper ── */
+const apiFetch = async (path, options = {}) => {
+  const token = localStorage.getItem('auth_token');
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+};
+
 /* ══════════ HELPERS ══════════ */
 const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
+
 const SelectBox = ({ value, onChange, options }) => (
   <div className="relative">
     <select value={value} onChange={e => onChange(e.target.value)}
@@ -51,99 +74,141 @@ const SectionHeader = ({ title, description }) => (
 
 /* ══════════ TABS ══════════ */
 const TABS = [
-  { key: 'clinic',        label: 'Clinic Info',     icon: Building2 },
-  { key: 'appearance',    label: 'Appearance',      icon: Palette   },
-  { key: 'notifications', label: 'Notifications',   icon: Bell      },
-  { key: 'security',      label: 'Security',        icon: Shield    },
-  { key: 'system',        label: 'System',          icon: Database  },
+  { key: 'clinic',        label: 'Clinic Info',   icon: Building2 },
+  { key: 'appearance',    label: 'Appearance',    icon: Palette   },
+  { key: 'notifications', label: 'Notifications', icon: Bell      },
+  { key: 'security',      label: 'Security',      icon: Shield    },
+  { key: 'system',        label: 'System',        icon: Database  },
 ];
+
+/* Default values */
+const DEFAULT_CLINIC = {
+  name:     'ClinicSys Medical Center',
+  tagline:  'Your Health, Our Priority',
+  address:  '123 Rizal St., Quezon City, Metro Manila',
+  phone:    '+63 2 8123 4567',
+  mobile:   '+63 912 345 6789',
+  email:    'info@clinicsys.com',
+  website:  'www.clinicsys.com',
+  tin:      '123-456-789-000',
+  phic:     'PHIC-123456',
+  schedule: 'Mon–Sat: 8:00 AM – 6:00 PM',
+};
 
 /* ══════════ MAIN ══════════ */
 export default function SettingsPage() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('clinic');
-  const [saved, setSaved] = useState(false);
+  const [activeTab,  setActiveTab]  = useState('clinic');
+  const [saved,      setSaved]      = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [loadingClinic, setLoadingClinic] = useState(true);
 
   /* — Clinic Info — */
-  const [clinic, setClinic] = useState({
-    name: 'ClinicSys Medical Center',
-    tagline: 'Your Health, Our Priority',
-    address: '123 Rizal St., Quezon City, Metro Manila',
-    phone: '+63 2 8123 4567',
-    mobile: '+63 912 345 6789',
-    email: 'info@clinicsys.com',
-    website: 'www.clinicsys.com',
-    tin: '123-456-789-000',
-    phic: 'PHIC-123456',
-    schedule: 'Mon–Sat: 8:00 AM – 6:00 PM',
-  });
+  const [clinic, setClinic] = useState(DEFAULT_CLINIC);
 
   /* — Appearance — */
   const [appearance, setAppearance] = useState({
-    theme: 'light',
-    primaryColor: 'blue',
-    fontSize: 'medium',
-    language: 'en',
-    timezone: 'Asia/Manila',
-    dateFormat: 'MM/DD/YYYY',
-    timeFormat: '12h',
-    sidebarCollapsed: false,
-    compactMode: false,
-    showAnimations: true,
+    theme: 'light', primaryColor: 'blue', fontSize: 'medium',
+    language: 'en', timezone: 'Asia/Manila', dateFormat: 'MM/DD/YYYY',
+    timeFormat: '12h', sidebarCollapsed: false, compactMode: false, showAnimations: true,
   });
 
   /* — Notifications — */
   const [notifs, setNotifs] = useState({
-    emailAppointments: true,
-    emailFollowups: true,
-    emailReports: false,
-    smsAppointments: true,
-    smsFollowups: false,
-    inAppAll: true,
-    inAppAppointments: true,
-    inAppQueue: true,
-    inAppSystem: true,
-    reminderHours: '24',
-    dailySummary: true,
-    weeklySummary: false,
+    emailAppointments: true, emailFollowups: true, emailReports: false,
+    smsAppointments: true, smsFollowups: false,
+    inAppAll: true, inAppAppointments: true, inAppQueue: true, inAppSystem: true,
+    reminderHours: '24', dailySummary: true, weeklySummary: false,
   });
 
   /* — Security — */
   const [security, setSecurity] = useState({
-    twoFactor: false,
-    sessionTimeout: '30',
-    passwordExpiry: '90',
-    loginAttempts: '5',
-    auditLog: true,
-    ipRestriction: false,
-    forceHttps: true,
+    twoFactor: false, sessionTimeout: '30', passwordExpiry: '90',
+    loginAttempts: '5', auditLog: true, ipRestriction: false, forceHttps: true,
   });
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showNewPw,     setShowNewPw]     = useState(false);
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
+  const [pwSaving, setPwSaving] = useState(false);
 
   /* — System — */
   const [system, setSystem] = useState({
-    autoBackup: true,
-    backupFrequency: 'daily',
-    backupRetention: '30',
-    maintenanceMode: false,
-    debugMode: false,
-    cacheEnabled: true,
-    maxUploadSize: '10',
+    autoBackup: true, backupFrequency: 'daily', backupRetention: '30',
+    maintenanceMode: false, debugMode: false, cacheEnabled: true, maxUploadSize: '10',
   });
 
-  const handleSave = () => {
-    setSaved(true);
-    toast({ title: 'Settings saved', description: 'Your changes have been applied successfully.' });
-    setTimeout(() => setSaved(false), 2000);
+  /* ── Load clinic settings on mount ── */
+  useEffect(() => {
+    const load = async () => {
+      setLoadingClinic(true);
+      try {
+        const data = await apiFetch('/clinic-settings');
+        if (data && Object.keys(data).length > 0) {
+          setClinic(prev => ({ ...prev, ...data }));
+        }
+      } catch {
+        // fallback to defaults — silently ignore
+      } finally {
+        setLoadingClinic(false);
+      }
+    };
+    load();
+  }, []);
+
+  const setC   = (k, v) => setClinic(p     => ({ ...p, [k]: v }));
+  const setA   = (k, v) => setAppearance(p => ({ ...p, [k]: v }));
+  const setN   = (k, v) => setNotifs(p     => ({ ...p, [k]: v }));
+  const setS   = (k, v) => setSecurity(p   => ({ ...p, [k]: v }));
+  const setSys = (k, v) => setSystem(p     => ({ ...p, [k]: v }));
+
+  /* ── Save clinic settings ── */
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (activeTab === 'clinic') {
+        await apiFetch('/clinic-settings', {
+          method: 'POST',
+          body: JSON.stringify(clinic),
+        });
+      }
+      setSaved(true);
+      toast({ title: 'Settings saved', description: 'Your changes have been applied successfully.' });
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      toast({ title: 'Error saving', description: err.message, variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const setC = (k, v) => setClinic(p => ({ ...p, [k]: v }));
-  const setA = (k, v) => setAppearance(p => ({ ...p, [k]: v }));
-  const setN = (k, v) => setNotifs(p => ({ ...p, [k]: v }));
-  const setS = (k, v) => setSecurity(p => ({ ...p, [k]: v }));
-  const setSys = (k, v) => setSystem(p => ({ ...p, [k]: v }));
+  /* ── Update password ── */
+  const handleUpdatePassword = async () => {
+    if (!pwForm.current)               return toast({ title: 'Error', description: 'Enter your current password.', variant: 'destructive' });
+    if (pwForm.newPw.length < 8)       return toast({ title: 'Error', description: 'New password must be at least 8 characters.', variant: 'destructive' });
+    if (pwForm.newPw !== pwForm.confirm) return toast({ title: 'Error', description: 'Passwords do not match.', variant: 'destructive' });
+
+    setPwSaving(true);
+    try {
+      await apiFetch('/auth/verify-password', {
+        method: 'POST',
+        body: JSON.stringify({ password: pwForm.current }),
+      });
+      await apiFetch('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password:          pwForm.current,
+          new_password:              pwForm.newPw,
+          new_password_confirmation: pwForm.confirm,
+        }),
+      });
+      setPwForm({ current: '', newPw: '', confirm: '' });
+      toast({ title: 'Password updated', description: 'Your password has been changed successfully.' });
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setPwSaving(false);
+    }
+  };
 
   return (
     <MainLayout title="Settings" subtitle="Manage clinic preferences and system configuration">
@@ -179,63 +244,82 @@ export default function SettingsPage() {
                 <CardTitle className="text-base flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-blue-600" /> Clinic Information
                 </CardTitle>
-                <p className="text-xs text-gray-400">Basic details that appear on receipts, reports and patient communications.</p>
+                <p className="text-xs text-gray-400">Basic details that appear on receipts, reports, patient communications, and the landing page.</p>
               </CardHeader>
               <CardContent className="space-y-5">
 
-                {/* Logo upload */}
-                <div className="flex items-center gap-4 p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
-                  <div className="w-16 h-16 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <Building2 className="w-8 h-8 text-blue-400" />
+                {loadingClinic ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-6 h-6 text-blue-400 animate-spin mr-2" />
+                    <span className="text-sm text-gray-400">Loading clinic settings…</span>
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-700">Clinic Logo</p>
-                    <p className="text-xs text-gray-400 mt-0.5">PNG or JPG, max 2MB. Shown on reports & receipts.</p>
-                    <Button size="sm" variant="outline" className="mt-2 h-7 text-xs gap-1.5">
-                      <Upload className="w-3 h-3" /> Upload Logo
-                    </Button>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    {/* Logo upload */}
+                    <div className="flex items-center gap-4 p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
+                      <div className="w-16 h-16 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <Building2 className="w-8 h-8 text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-700">Clinic Logo</p>
+                        <p className="text-xs text-gray-400 mt-0.5">PNG or JPG, max 2MB. Shown on reports & receipts.</p>
+                        <Button size="sm" variant="outline" className="mt-2 h-7 text-xs gap-1.5">
+                          <Upload className="w-3 h-3" /> Upload Logo
+                        </Button>
+                      </div>
+                    </div>
 
-                <SectionHeader title="Basic Details" />
-                <div className="grid grid-cols-2 gap-4">
-                  <FieldRow label="Clinic Name">
-                    <input value={clinic.name} onChange={e => setC('name', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                  <FieldRow label="Tagline / Subtitle">
-                    <input value={clinic.tagline} onChange={e => setC('tagline', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                </div>
-                <FieldRow label="Address">
-                  <input value={clinic.address} onChange={e => setC('address', e.target.value)} className={inputCls} />
-                </FieldRow>
-                <div className="grid grid-cols-2 gap-4">
-                  <FieldRow label="Landline">
-                    <input value={clinic.phone} onChange={e => setC('phone', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                  <FieldRow label="Mobile">
-                    <input value={clinic.mobile} onChange={e => setC('mobile', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                  <FieldRow label="Email">
-                    <input type="email" value={clinic.email} onChange={e => setC('email', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                  <FieldRow label="Website">
-                    <input value={clinic.website} onChange={e => setC('website', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                </div>
+                    <SectionHeader title="Basic Details" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FieldRow label="Clinic Name">
+                        <input value={clinic.name} onChange={e => setC('name', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                      <FieldRow label="Tagline / Subtitle">
+                        <input value={clinic.tagline} onChange={e => setC('tagline', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                    </div>
+                    <FieldRow label="Address">
+                      <input value={clinic.address} onChange={e => setC('address', e.target.value)} className={inputCls} />
+                    </FieldRow>
+                    <div className="grid grid-cols-2 gap-4">
+                      <FieldRow label="Landline">
+                        <input value={clinic.phone} onChange={e => setC('phone', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                      <FieldRow label="Mobile">
+                        <input value={clinic.mobile} onChange={e => setC('mobile', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                      <FieldRow label="Email">
+                        <input type="email" value={clinic.email} onChange={e => setC('email', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                      <FieldRow label="Website">
+                        <input value={clinic.website} onChange={e => setC('website', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                    </div>
 
-                <SectionHeader title="Regulatory Info" />
-                <div className="grid grid-cols-2 gap-4">
-                  <FieldRow label="TIN">
-                    <input value={clinic.tin} onChange={e => setC('tin', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                  <FieldRow label="PhilHealth Accreditation No.">
-                    <input value={clinic.phic} onChange={e => setC('phic', e.target.value)} className={inputCls} />
-                  </FieldRow>
-                </div>
-                <FieldRow label="Operating Schedule">
-                  <input value={clinic.schedule} onChange={e => setC('schedule', e.target.value)} className={inputCls} />
-                </FieldRow>
+                    <SectionHeader title="Regulatory Info" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FieldRow label="TIN">
+                        <input value={clinic.tin} onChange={e => setC('tin', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                      <FieldRow label="PhilHealth Accreditation No.">
+                        <input value={clinic.phic} onChange={e => setC('phic', e.target.value)} className={inputCls} />
+                      </FieldRow>
+                    </div>
+                    <FieldRow label="Operating Schedule" hint="This appears on the landing page contact section.">
+                      <input value={clinic.schedule} onChange={e => setC('schedule', e.target.value)} className={inputCls} />
+                    </FieldRow>
+
+                    {/* Live preview */}
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                      <p className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-2">Landing Page Preview</p>
+                      <p className="text-sm font-bold text-gray-800">{clinic.name || '—'}</p>
+                      <p className="text-xs text-gray-500 italic">"{clinic.tagline || '—'}"</p>
+                      <p className="text-xs text-gray-400 mt-1">📍 {clinic.address || '—'}</p>
+                      <p className="text-xs text-gray-400">📞 {clinic.phone} · 📧 {clinic.email}</p>
+                      <p className="text-xs text-gray-400">🕒 {clinic.schedule || '—'}</p>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
@@ -258,7 +342,7 @@ export default function SettingsPage() {
                     { value: 'system', label: 'System', icon: Monitor },
                   ].map(t => {
                     const Icon = t.icon;
-                    const sel = appearance.theme === t.value;
+                    const sel  = appearance.theme === t.value;
                     return (
                       <button key={t.value} onClick={() => setA('theme', t.value)}
                         className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all
@@ -273,11 +357,11 @@ export default function SettingsPage() {
                 <SectionHeader title="Color Accent" />
                 <div className="flex items-center gap-3">
                   {[
-                    { value:'blue',   color:'bg-blue-500'   },
-                    { value:'teal',   color:'bg-teal-500'   },
-                    { value:'indigo', color:'bg-indigo-500' },
-                    { value:'violet', color:'bg-violet-500' },
-                    { value:'green',  color:'bg-green-500'  },
+                    { value: 'blue',   color: 'bg-blue-500'   },
+                    { value: 'teal',   color: 'bg-teal-500'   },
+                    { value: 'indigo', color: 'bg-indigo-500' },
+                    { value: 'violet', color: 'bg-violet-500' },
+                    { value: 'green',  color: 'bg-green-500'  },
                   ].map(c => (
                     <button key={c.value} onClick={() => setA('primaryColor', c.value)}
                       className={`w-9 h-9 rounded-xl ${c.color} transition-all shadow-sm
@@ -350,12 +434,12 @@ export default function SettingsPage() {
                 <div className="divide-y divide-gray-50">
                   <ToggleRow label="All Notifications" description="Master toggle for in-app alerts"
                     checked={notifs.inAppAll} onChange={v => setN('inAppAll', v)} />
-                  <ToggleRow label="Appointment Updates" checked={notifs.inAppAppointments}
-                    onChange={v => setN('inAppAppointments', v)} disabled={!notifs.inAppAll} />
-                  <ToggleRow label="Queue Changes" checked={notifs.inAppQueue}
-                    onChange={v => setN('inAppQueue', v)} disabled={!notifs.inAppAll} />
-                  <ToggleRow label="System Alerts" checked={notifs.inAppSystem}
-                    onChange={v => setN('inAppSystem', v)} disabled={!notifs.inAppAll} />
+                  <ToggleRow label="Appointment Updates"
+                    checked={notifs.inAppAppointments} onChange={v => setN('inAppAppointments', v)} disabled={!notifs.inAppAll} />
+                  <ToggleRow label="Queue Changes"
+                    checked={notifs.inAppQueue} onChange={v => setN('inAppQueue', v)} disabled={!notifs.inAppAll} />
+                  <ToggleRow label="System Alerts"
+                    checked={notifs.inAppSystem} onChange={v => setN('inAppSystem', v)} disabled={!notifs.inAppAll} />
                 </div>
 
                 <SectionHeader title="Reminder Timing" />
@@ -417,7 +501,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              {/* Change Password */}
+              {/* Change Password — connected to API */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -455,9 +539,9 @@ export default function SettingsPage() {
                     </FieldRow>
                   </div>
                   <div className="flex justify-end">
-                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white"
-                      onClick={() => toast({ title: 'Password updated', description: 'Your password has been changed.' })}>
-                      Update Password
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+                      disabled={pwSaving} onClick={handleUpdatePassword}>
+                      {pwSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</> : 'Update Password'}
                     </Button>
                   </div>
                 </CardContent>
@@ -494,8 +578,6 @@ export default function SettingsPage() {
                         options={[{value:'5',label:'5 MB'},{value:'10',label:'10 MB'},{value:'25',label:'25 MB'},{value:'50',label:'50 MB'}]} />
                     </FieldRow>
                   </div>
-
-                  {/* Backup actions */}
                   <div className="flex gap-3 pt-1">
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs"
                       onClick={() => toast({ title: 'Backup started', description: 'Manual backup is running…' })}>
@@ -534,13 +616,11 @@ export default function SettingsPage() {
                       <p className="text-xs text-red-600 font-semibold">These actions are irreversible. Proceed with extreme caution.</p>
                     </div>
                     <div className="flex flex-wrap gap-3">
-                      <Button size="sm" variant="outline"
-                        className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
+                      <Button size="sm" variant="outline" className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
                         onClick={() => toast({ title: 'Cache cleared', description: 'System cache has been flushed.' })}>
                         <RefreshCw className="w-3.5 h-3.5" /> Clear Cache
                       </Button>
-                      <Button size="sm" variant="outline"
-                        className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
+                      <Button size="sm" variant="outline" className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
                         onClick={() => toast({ title: 'Logs cleared', description: 'Activity logs have been wiped.' })}>
                         <Trash2 className="w-3.5 h-3.5" /> Clear All Logs
                       </Button>
@@ -561,12 +641,12 @@ export default function SettingsPage() {
                     {[
                       ['Application', 'ClinicSys v2.1.0'],
                       ['Environment', 'Production'],
-                      ['Database', 'MySQL 8.0.36'],
-                      ['Server', 'Ubuntu 22.04 LTS'],
+                      ['Database',    'MySQL 8.0.36'],
+                      ['Server',      'Ubuntu 22.04 LTS'],
                       ['PHP Version', '8.2.12'],
                       ['Last Backup', 'Mar 2, 2026 – 03:00 AM'],
-                      ['Storage Used', '4.2 GB / 20 GB'],
-                      ['Uptime', '99.98%'],
+                      ['Storage Used','4.2 GB / 20 GB'],
+                      ['Uptime',      '99.98%'],
                     ].map(([k, v]) => (
                       <div key={k} className="bg-gray-50 rounded-lg p-3">
                         <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">{k}</p>
@@ -581,11 +661,17 @@ export default function SettingsPage() {
 
           {/* ══ SAVE BUTTON ══ */}
           <div className="flex justify-end gap-3 pt-1 pb-4">
-            <Button variant="outline" onClick={() => toast({ title: 'Changes discarded' })}>
+            <Button variant="outline" onClick={() => {
+              toast({ title: 'Changes discarded' });
+              if (activeTab === 'clinic') setClinic(DEFAULT_CLINIC);
+            }}>
               <RefreshCw className="w-4 h-4 mr-1.5" /> Discard
             </Button>
-            <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]">
-              {saved
+            <Button onClick={handleSave} disabled={saving || loadingClinic}
+              className="bg-blue-600 hover:bg-blue-700 text-white min-w-[130px]">
+              {saving
+                ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Saving…</>
+                : saved
                 ? <><Check className="w-4 h-4 mr-1.5" /> Saved!</>
                 : <><Save className="w-4 h-4 mr-1.5" /> Save Changes</>
               }

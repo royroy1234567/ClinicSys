@@ -94,10 +94,10 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
     ];
 
     if (user?.role === 'staff') return [...base,
+      {icon:  ShoppingCart, label: 'POS', path: '/pos' },
       { icon: Calendar,      label: 'Appointments', path: '/staff-appointments' },
       { icon: ClipboardList, label: 'Queue',        path: '/queue'              },
       { icon: Stethoscope,   label: 'Doctors',      path: '/staff-doctors'      },
-      { icon: ShoppingCart,  label: 'POS',          path: '/pos'                },
       { icon: Settings,      label: 'Settings',     path: '/staff-settings'     },
     ];
     if (user?.role === 'doctor') return [...base,

@@ -1,6 +1,5 @@
 // API service — doctors use real backend, others use mock data
 import {
-  mockPatients,
   mockDoctors,
   mockAppointments,
   mockConsultations,
@@ -12,7 +11,6 @@ import {
 const delay = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms));
 
 // In-memory storage for mock data
-let patients      = [...mockPatients];
 let appointments  = [...mockAppointments];
 let consultations = [...mockConsultations];
 let users         = [...mockUsers];
@@ -37,53 +35,70 @@ const mapDoctor = (u) => ({
   phone:          u.contact_number,
 });
 
+const mapPatient = (p) => ({
+  id:         p.id,
+  first_name: p.first_name,
+  middle_name:p.middle_name,
+  last_name:  p.last_name,
+  age:        p.age,
+  mobile:     p.mobile,
+  email:      p.email,
+  status:     p.status,
+  name:       [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(),
+  contact:    p.mobile || '',
+});
+
 export const api = {
 
-  // ── Patients (mock) ──────────────────────────────────────────
+  // ── Patients (real API) ─────────────────────────────────────
   patients: {
     getAll: async (search = '') => {
-      await delay();
-      if (search) {
-        return patients.filter(
-          p =>
-            p.name.toLowerCase().includes(search.toLowerCase()) ||
-            p.contact.includes(search)
-        );
-      }
-      return patients.filter(p => !p.archived);
+      const res = await fetch(`${API_BASE}/patients`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch patients');
+      const data = await res.json();
+      const rows = Array.isArray(data) ? data.map(mapPatient) : [];
+      if (!search) return rows;
+      const q = search.toLowerCase();
+      return rows.filter(
+        (p) =>
+          (p.name || '').toLowerCase().includes(q) ||
+          (p.contact || '').includes(search) ||
+          (p.email || '').toLowerCase().includes(q)
+      );
     },
     getById: async (id) => {
-      await delay();
-      return patients.find(p => p.id === id);
+      const rows = await api.patients.getAll('');
+      const found = rows.find(p => String(p.id) === String(id));
+      if (!found) throw new Error('Patient not found');
+      return found;
     },
     create: async (data) => {
-      await delay();
-      const newPatient = {
-        id: generateId(),
-        ...data,
-        archived:   false,
-        created_at: new Date().toISOString(),
-      };
-      patients.push(newPatient);
-      return newPatient;
+      const res = await fetch(`${API_BASE}/patients/register`, {
+        method:  'POST',
+        headers: authHeaders(),
+        body:    JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to create patient');
+      return res.json();
     },
     update: async (id, data) => {
-      await delay();
-      const index = patients.findIndex(p => p.id === id);
-      if (index !== -1) {
-        patients[index] = { ...patients[index], ...data };
-        return patients[index];
-      }
-      throw new Error('Patient not found');
+      const res = await fetch(`${API_BASE}/patient/profile`, {
+        method:  'PUT',
+        headers: authHeaders(),
+        body:    JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to update patient');
+      return res.json();
     },
     archive: async (id) => {
-      await delay();
-      const index = patients.findIndex(p => p.id === id);
-      if (index !== -1) {
-        patients[index].archived = true;
-        return { success: true };
-      }
-      throw new Error('Patient not found');
+      const res = await fetch(`${API_BASE}/patients/${id}/toggle-status`, {
+        method:  'PATCH',
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to update patient status');
+      return res.json();
     },
   },
 
@@ -239,6 +254,8 @@ export const api = {
     },
   },
 
+
+  
   // ── Activity Logs (mock) ──────────────────────────────────────
   activity: {
     getAll: async () => {
@@ -246,4 +263,28 @@ export const api = {
       return activityLogs.slice(0, 100);
     },
   },
+
+  // FronEnd/src/services/Api.js
+queue: {
+  getAll: async (date) => {
+    const res = await fetch(`${API_BASE}/queue-entries?date=${date}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch queue');
+    return res.json();
+  },
+  addWalkin: async (payload) => {
+    const res = await fetch(`${API_BASE}/queue-entries/walkin`, { method:'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error('Failed to add walk-in');
+    return res.json();
+  },
+  updateStatus: async (id, status) => {
+    const res = await fetch(`${API_BASE}/queue-entries/${id}/status`, { method:'PATCH', headers: authHeaders(), body: JSON.stringify({ status }) });
+    if (!res.ok) throw new Error('Failed to update status');
+    return res.json();
+  },
+  checkInAppointment: async (appointmentId) => {
+    const res = await fetch(`${API_BASE}/appointments/${appointmentId}/check-in`, { method:'POST', headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to check-in appointment');
+    return res.json();
+  },
+}
 };

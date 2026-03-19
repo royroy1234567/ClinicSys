@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
+import { api } from '../services/Api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
@@ -7,21 +8,20 @@ import {
   X, Check, RefreshCw, Stethoscope, Hash, PlayCircle,
   CheckCircle2, UserX, AlertTriangle, Trash2, PhoneCall,
   ChevronRight, Activity, Mic, LayoutGrid, List, Search,
-  UserCheck, PlusCircle,
+  UserCheck, PlusCircle, Star,
 } from 'lucide-react';
 
 /* ═══════════════════════════════
    CONSTANTS
 ═══════════════════════════════ */
 const getNow = () => new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-
-const DOCTORS = [
-  { id: 'd1', name: 'Dr. Sarah Smith',  specialty: 'General Medicine',  color: 'blue'   },
-  { id: 'd2', name: 'Dr. Michael Chen', specialty: 'Pediatrics',        color: 'purple' },
-  { id: 'd3', name: 'Dr. James Lim',    specialty: 'General Medicine',  color: 'teal'   },
-  { id: 'd4', name: 'Dr. Reyna Torres', specialty: 'Internal Medicine', color: 'rose'   },
-  { id: 'd5', name: 'Dr. Ana Reyes',    specialty: 'Dermatology',       color: 'amber'  },
-];
+const getTodayLocal = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 const DR_COLORS = {
   blue:   { border: 'border-blue-200',   badge: 'bg-blue-600',   pill: 'bg-blue-100 text-blue-700'     },
@@ -30,6 +30,7 @@ const DR_COLORS = {
   rose:   { border: 'border-rose-200',   badge: 'bg-rose-600',   pill: 'bg-rose-100 text-rose-700'     },
   amber:  { border: 'border-amber-200',  badge: 'bg-amber-500',  pill: 'bg-amber-100 text-amber-700'   },
 };
+const DR_COLOR_KEYS = Object.keys(DR_COLORS);
 
 const STATUS_CFG = {
   waiting:   { label: 'Waiting',   bg: 'bg-yellow-100', text: 'text-yellow-700', dot: 'bg-yellow-400' },
@@ -39,36 +40,49 @@ const STATUS_CFG = {
   no_show:   { label: 'No-show',   bg: 'bg-red-100',    text: 'text-red-600',    dot: 'bg-red-500'    },
 };
 
+/* ── Priority Config (auto-assigned based on age & type) ── */
+const PRIORITY_CFG = {
+  senior:      { label: 'Senior (60+)', short: 'S', order: 1, bg: 'bg-rose-100',  text: 'text-rose-700',  border: 'border-rose-300',  dot: 'bg-rose-500',  badge: 'bg-rose-500'  },
+  appointment: { label: 'Appointment',  short: 'A', order: 2, bg: 'bg-blue-100',  text: 'text-blue-700',  border: 'border-blue-300',  dot: 'bg-blue-500',  badge: 'bg-blue-600'  },
+  walkin:      { label: 'Walk-in',      short: 'W', order: 3, bg: 'bg-gray-100',  text: 'text-gray-600',  border: 'border-gray-300',  dot: 'bg-gray-400',  badge: 'bg-gray-500'  },
+};
+
+/* Auto-derive priority: age 60+ = senior regardless of type */
+const derivePriority = (age, type = 'walkin') => {
+  if (age && parseInt(age) >= 60) return 'senior';
+  if (type === 'appointment') return 'appointment';
+  return 'walkin';
+};
+
+/* Sort queue by priority then by queue number */
+const sortByPriority = (list) =>
+  [...list].sort((a, b) => {
+    const pa = PRIORITY_CFG[a.priority]?.order ?? 99;
+    const pb = PRIORITY_CFG[b.priority]?.order ?? 99;
+    if (pa !== pb) return pa - pb;
+    return a.num - b.num;
+  });
+
+const normalizeQueueRow = (row) => {
+  const rawPriority = String(row?.priority ?? '').toLowerCase().replace('-', '');
+  const rawStatus = String(row?.status ?? '').toLowerCase().replace('-', '_');
+  const doctorName = row?.doctor_name || row?.doctor || 'TBD';
+  const normalizedDoctor = doctorName === 'TBD' || doctorName.startsWith('Dr.') ? doctorName : `Dr. ${doctorName}`;
+  return {
+    ...row,
+    id: row?.id ?? row?.queue_entry_id,
+    num: Number(row?.num ?? row?.queue_number ?? 0),
+    name: row?.name ?? row?.patient_name ?? 'Unknown',
+    doctor: normalizedDoctor,
+    priority: PRIORITY_CFG[rawPriority] ? rawPriority : 'walkin',
+    status: STATUS_CFG[rawStatus] ? rawStatus : 'waiting',
+    arrival: row?.arrival ?? (row?.arrival_time ? String(row.arrival_time).slice(0, 5) : getNow()),
+  };
+};
+
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
 
 let _counter = 9;
-
-/* ── Patient master list ── */
-const PATIENT_DB = [
-  { id: 'P001', name: 'John Doe',         contact: '+63 917 1001001', lastVisit: '2025-06-10', doctor: 'Dr. Sarah Smith'  },
-  { id: 'P002', name: 'Jane Smith',       contact: '+63 918 2002002', lastVisit: '2025-06-15', doctor: 'Dr. Michael Chen' },
-  { id: 'P003', name: 'Robert Johnson',   contact: '+63 919 3003003', lastVisit: '2025-05-20', doctor: 'Dr. James Lim'    },
-  { id: 'P004', name: 'Maria Santos',     contact: '+63 912 0001',    lastVisit: '2025-06-18', doctor: 'Dr. Sarah Smith'  },
-  { id: 'P005', name: 'Carlos Reyes',     contact: '+63 915 5005005', lastVisit: '2025-04-30', doctor: 'Dr. Reyna Torres' },
-  { id: 'P006', name: 'Ana Cruz',         contact: '+63 917 0002',    lastVisit: '2025-06-01', doctor: 'Dr. Ana Reyes'    },
-  { id: 'P007', name: 'Ben Torres',       contact: '+63 920 7007007', lastVisit: '2025-03-12', doctor: 'Dr. Michael Chen' },
-  { id: 'P008', name: 'Carla Mendoza',    contact: '+63 919 0003',    lastVisit: '2025-06-05', doctor: 'Dr. James Lim'    },
-  { id: 'P009', name: 'Ramon Bautista',   contact: '+63 916 9009009', lastVisit: '2025-05-08', doctor: 'Dr. Sarah Smith'  },
-  { id: 'P010', name: 'Liza Navarro',     contact: '+63 917 1010010', lastVisit: '2025-02-22', doctor: 'Dr. Ana Reyes'    },
-  { id: 'P011', name: 'Eduardo Flores',   contact: '+63 918 1111011', lastVisit: '2025-06-12', doctor: 'Dr. Reyna Torres' },
-  { id: 'P012', name: 'Grace Villanueva', contact: '+63 912 1212012', lastVisit: '2025-01-15', doctor: 'Dr. James Lim'    },
-];
-
-const INIT_QUEUE = [
-  { id: 'Q001', num: 1, name: 'John Doe',      contact: '',             doctor: 'Dr. Sarah Smith',  type: 'appointment', reason: 'Regular checkup',    status: 'completed', arrival: '08:00' },
-  { id: 'Q002', num: 2, name: 'Jane Smith',     contact: '',             doctor: 'Dr. Michael Chen', type: 'appointment', reason: 'Follow-up visit',    status: 'completed', arrival: '08:15' },
-  { id: 'Q003', num: 3, name: 'Robert Johnson', contact: '',             doctor: 'Dr. James Lim',    type: 'appointment', reason: 'Blood pressure',     status: 'completed', arrival: '09:00' },
-  { id: 'Q004', num: 4, name: 'Maria Santos',   contact: '+63 912 0001', doctor: 'Dr. Sarah Smith',  type: 'walkin',      reason: 'Fever & cough',      status: 'ongoing',   arrival: '09:20' },
-  { id: 'Q005', num: 5, name: 'Carlos Reyes',   contact: '',             doctor: 'Dr. Reyna Torres', type: 'appointment', reason: 'Annual physical',    status: 'called',    arrival: '10:00' },
-  { id: 'Q006', num: 6, name: 'Ana Cruz',       contact: '+63 917 0002', doctor: 'Dr. Ana Reyes',    type: 'walkin',      reason: 'Skin rash',          status: 'waiting',   arrival: '10:15' },
-  { id: 'Q007', num: 7, name: 'Ben Torres',     contact: '',             doctor: 'Dr. Michael Chen', type: 'appointment', reason: 'Diabetes follow-up', status: 'waiting',   arrival: '11:00' },
-  { id: 'Q008', num: 8, name: 'Carla Mendoza',  contact: '+63 919 0003', doctor: 'Dr. James Lim',    type: 'walkin',      reason: 'Asthma checkup',     status: 'waiting',   arrival: '11:15' },
-];
 
 /* ═══════════════════════════════
    SMALL COMPONENTS
@@ -83,10 +97,35 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const TypeBadge = ({ type }) =>
-  type === 'walkin'
-    ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700"><UserPlus className="w-3 h-3" />Walk-in</span>
-    : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700"><CalendarIcon className="w-3 h-3" />Appt</span>;
+const PriorityBadge = ({ priority }) => {
+  const cfg = PRIORITY_CFG[priority] || PRIORITY_CFG.walkin;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+      {priority === 'senior'      && <Star className="w-3 h-3" />}
+      {priority === 'appointment' && <CalendarIcon className="w-3 h-3" />}
+      {priority === 'walkin'      && <UserPlus className="w-3 h-3" />}
+      {cfg.label}
+    </span>
+  );
+};
+
+const QueueNumChip = ({ num, status, priority, size = 'md' }) => {
+  const cfg        = PRIORITY_CFG[priority] || PRIORITY_CFG.walkin;
+  const isOngoing  = status === 'ongoing';
+  const isCalled   = status === 'called';
+  const isDone     = ['completed', 'no_show'].includes(status);
+  const sizeClass  = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm';
+  let bgClass;
+  if (isOngoing)     bgClass = 'bg-green-500 text-white';
+  else if (isCalled) bgClass = 'bg-blue-600 text-white';
+  else if (isDone)   bgClass = 'bg-gray-200 text-gray-400';
+  else               bgClass = `${cfg.badge} text-white`;
+  return (
+    <span className={`inline-flex ${sizeClass} rounded-xl items-center justify-center font-black flex-shrink-0 ${bgClass}`}>
+      {String(num).padStart(2, '0')}
+    </span>
+  );
+};
 
 const SelectBox = ({ value, onChange, options, placeholder, className = '' }) => (
   <div className={`relative ${className}`}>
@@ -127,20 +166,20 @@ const KPICard = ({ label, value, sub, icon: Icon, iconBg, iconColor, accent }) =
 /* ═══════════════════════════════
    PATIENT SEARCH INPUT
 ═══════════════════════════════ */
-function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
+function PatientSearchInput({ value, onSelect, onNewPatient, patients }) {
   const [query,       setQuery]       = useState(value || '');
   const [open,        setOpen]        = useState(false);
-  const [isNew,       setIsNew]       = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  const [isNew,       setIsNew]       = useState(false);
   const wrapRef = useRef(null);
 
   const results = useMemo(() => {
     if (!query.trim()) return [];
-    return PATIENT_DB.filter(p =>
+    return patients.filter(p =>
       p.name.toLowerCase().includes(query.toLowerCase()) ||
       p.contact.includes(query)
     ).slice(0, 6);
-  }, [query]);
+  }, [patients, query]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -154,7 +193,7 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
     setQuery(p.name);
     setIsNew(false);
     setOpen(false);
-    onSelect({ name: p.name, contact: p.contact, suggestedDoctor: p.doctor });
+    onSelect({ patientId: p.id, name: p.name, age: p.age, contact: p.contact, suggestedDoctor: p.doctor });
   };
 
   const handleUseAsNew = () => {
@@ -169,11 +208,8 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
     setIsNew(false);
     setOpen(val.trim().length > 0);
     setHighlighted(-1);
-    if (val.trim() === '') {
-      onSelect({ name: '', contact: '', suggestedDoctor: '' });
-    } else {
-      onNewPatient(val);
-    }
+    if (val.trim() === '') onSelect({ patientId: null, name: '', age: '', contact: '', suggestedDoctor: '' });
+    else onNewPatient(val);
   };
 
   const handleKeyDown = (e) => {
@@ -194,59 +230,48 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
         <input
-          value={query}
-          onChange={handleChange}
+          value={query} onChange={handleChange}
           onFocus={() => { if (query.trim()) setOpen(true); }}
           onKeyDown={handleKeyDown}
           placeholder="Search existing patient or type new name…"
-          className={`${inputCls} pl-9 pr-9`}
-          autoFocus
-          autoComplete="off"
+          className={`${inputCls} pl-9 pr-9`} autoFocus autoComplete="off"
         />
         {query && (
-          <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-            isNew ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
-          }`}>
+          <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isNew ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
             {isNew ? 'NEW' : value ? '✓' : ''}
           </span>
         )}
       </div>
-
       {open && (
         <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
           {results.length > 0 && (
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 pt-2.5 pb-1">Existing Patients</p>
               {results.map((p, i) => (
-                <button
-                  key={p.id}
-                  onMouseDown={() => pickPatient(p)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${highlighted === i ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                >
+                <button key={p.id} onMouseDown={() => pickPatient(p)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${highlighted === i ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
                   <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
                     <UserCheck className="w-4 h-4 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-gray-900 truncate">{p.name}</p>
-                    <p className="text-xs text-gray-400 truncate">{p.contact} · Last visit: {p.lastVisit}</p>
+                    <p className="text-xs text-gray-400 truncate">Age {p.age} · {p.contact} · Last visit: {p.lastVisit}</p>
                   </div>
-                  <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full flex-shrink-0">
-                    {p.doctor.replace('Dr. ', '')}
-                  </span>
+                  {p.age >= 60 && (
+                    <span className="text-[10px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 flex items-center gap-0.5">
+                      <Star className="w-2.5 h-2.5" /> Senior
+                    </span>
+                  )}
                 </button>
               ))}
               <div className="border-t border-gray-100 mx-2" />
             </div>
           )}
-
           {results.length === 0 && query.trim() && (
             <p className="text-xs text-gray-400 px-3 pt-3 pb-1">No existing patient found for "<span className="font-semibold text-gray-600">{query}</span>"</p>
           )}
-
-          <button
-            onMouseDown={handleUseAsNew}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${highlighted === results.length ? 'bg-blue-50' : 'hover:bg-blue-50'}`}
-          >
+          <button onMouseDown={handleUseAsNew}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${highlighted === results.length ? 'bg-blue-50' : 'hover:bg-blue-50'}`}>
             <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
               <PlusCircle className="w-4 h-4 text-blue-600" />
             </div>
@@ -263,22 +288,26 @@ function PatientSearchInput({ value, contact, onSelect, onNewPatient }) {
 
 /* ═══════════════════════════════
    WALK-IN MODAL
+   Priority is auto-derived from age (60+ = senior)
 ═══════════════════════════════ */
-const EMPTY_FORM = { name: '', contact: '', doctor: '', reason: '', isExisting: false };
+const EMPTY_FORM = { patientId: null, name: '', age: '', contact: '', doctor: '', reason: '', isExisting: false };
 
-function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
+function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving, patients, doctors }) {
   const [form,   setForm]   = useState({ ...EMPTY_FORM, doctor: preDoctor || '' });
   const [errors, setErrors] = useState({});
 
-  const set = (k, v) => {
-    setForm(f => ({ ...f, [k]: v }));
-    setErrors(e => ({ ...e, [k]: '' }));
-  };
+  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
 
-  const handlePatientSelect = ({ name, contact, suggestedDoctor }) => {
+  /* Auto-derive priority for preview */
+  const autoPriority = derivePriority(form.age, 'walkin');
+  const priCfg       = PRIORITY_CFG[autoPriority];
+
+  const handlePatientSelect = ({ patientId, name, age, contact, suggestedDoctor }) => {
     setForm(f => ({
       ...f,
+      patientId: patientId ?? null,
       name,
+      age:    age ? String(age) : f.age,
       contact: contact || f.contact,
       doctor: preDoctor || suggestedDoctor || f.doctor,
       isExisting: !!name,
@@ -286,18 +315,17 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
     setErrors(e => ({ ...e, name: '' }));
   };
 
-  const handleNewPatient = (name) => {
-    setForm(f => ({ ...f, name, isExisting: false }));
-    setErrors(e => ({ ...e, name: '' }));
-  };
-
   const validate = () => {
     const e = {};
     if (!form.name.trim())   e.name   = 'Patient name required';
     if (!form.reason.trim()) e.reason = 'Reason required';
+    if (form.age && (isNaN(form.age) || parseInt(form.age) < 0 || parseInt(form.age) > 120))
+      e.age = 'Enter a valid age (0–120)';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
+
+  const isSenior = form.age && parseInt(form.age) >= 60;
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -312,13 +340,12 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
             <div>
               <h2 className="text-lg font-bold text-gray-900">Add Walk-in Patient</h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                Will be assigned Queue <span className="font-bold text-blue-600">#{String(nextNum).padStart(2, '0')}</span>
+                Queue <span className="font-bold text-blue-600">#{String(nextNum).padStart(2, '0')}</span>
+                {isSenior && <span className="ml-2 inline-flex items-center gap-1 text-rose-600 font-bold"><Star className="w-3 h-3" /> Senior Priority</span>}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
 
         {/* Body */}
@@ -327,9 +354,9 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
           <FieldRow label="Patient Name" required>
             <PatientSearchInput
               value={form.name}
-              contact={form.contact}
               onSelect={handlePatientSelect}
-              onNewPatient={handleNewPatient}
+              onNewPatient={(name) => setForm(f => ({ ...f, patientId: null, name, isExisting: false }))}
+              patients={patients}
             />
             {form.isExisting && form.name && (
               <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1.5 bg-green-50 border border-green-200 rounded-lg">
@@ -346,54 +373,60 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
             {errors.name && <p className="text-xs text-red-500">⚠ {errors.name}</p>}
           </FieldRow>
 
-          <FieldRow label="Contact Number">
-            <input
-              value={form.contact}
-              onChange={e => set('contact', e.target.value)}
-              placeholder="+63 9XX XXX XXXX (optional)"
-              className={inputCls}
-            />
+          {/* Age field — key for auto-priority */}
+          <FieldRow label="Age">
+            <div className="relative">
+              <input
+                type="number" min="0" max="120"
+                value={form.age}
+                onChange={e => set('age', e.target.value)}
+                placeholder="e.g. 65"
+                className={inputCls}
+              />
+              {isSenior && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-full">
+                  <Star className="w-2.5 h-2.5" /> Senior
+                </span>
+              )}
+            </div>
+            {isSenior && (
+              <p className="text-xs text-rose-600 font-semibold flex items-center gap-1 mt-1">
+                <Star className="w-3 h-3" /> Age 60+ — automatically assigned Senior priority (served first).
+              </p>
+            )}
+            {errors.age && <p className="text-xs text-red-500">⚠ {errors.age}</p>}
           </FieldRow>
 
-          <FieldRow label="Assign Doctor">
-            <SelectBox
-              value={form.doctor}
-              onChange={v => set('doctor', v)}
-              placeholder="Any available doctor"
-              options={DOCTORS.map(d => ({ value: d.name, label: `${d.name} — ${d.specialty}` }))}
-            />
-          </FieldRow>
+          <div className="grid grid-cols-2 gap-3">
+            <FieldRow label="Contact Number">
+              <input value={form.contact} onChange={e => set('contact', e.target.value)}
+                placeholder="+63 9XX XXX XXXX" className={inputCls} />
+            </FieldRow>
+            <FieldRow label="Assign Doctor">
+              <SelectBox value={form.doctor} onChange={v => set('doctor', v)}
+                placeholder="Any available"
+                options={doctors.map(d => ({ value: d.name, label: d.name }))} />
+            </FieldRow>
+          </div>
 
           <FieldRow label="Reason for Visit" required>
-            <input
-              value={form.reason}
-              onChange={e => set('reason', e.target.value)}
-              placeholder="Chief complaint…"
-              className={inputCls}
-            />
+            <input value={form.reason} onChange={e => set('reason', e.target.value)}
+              placeholder="Chief complaint…" className={inputCls} />
             {errors.reason && <p className="text-xs text-red-500">⚠ {errors.reason}</p>}
           </FieldRow>
 
           {/* Preview */}
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center justify-between">
+          <div className={`border rounded-xl p-3 flex items-center justify-between ${priCfg.bg} ${priCfg.border}`}>
             <div className="flex items-center gap-2">
-              <span className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-lg flex items-center justify-center">
+              <span className={`w-9 h-9 rounded-xl text-white font-black text-lg flex items-center justify-center ${priCfg.badge}`}>
                 {String(nextNum).padStart(2, '0')}
               </span>
               <div>
                 <p className="text-sm font-bold text-gray-800">{form.name || 'Patient Name'}</p>
-                <p className="text-xs text-gray-400">{form.doctor || 'Doctor TBD'}</p>
+                <p className="text-xs text-gray-500">{form.doctor || 'Doctor TBD'}{form.age ? ` · Age ${form.age}` : ''}</p>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <TypeBadge type="walkin" />
-              {form.isExisting && (
-                <span className="text-[10px] bg-green-100 text-green-700 font-bold px-1.5 py-0.5 rounded-full">Existing</span>
-              )}
-              {!form.isExisting && form.name && (
-                <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-full">New</span>
-              )}
-            </div>
+            <PriorityBadge priority={autoPriority} />
           </div>
         </div>
 
@@ -401,13 +434,12 @@ function WalkinModal({ nextNum, preDoctor, onClose, onSave, saving }) {
         <div className="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
           <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() => { if (validate()) onSave(form); }}
+            onClick={() => { if (validate()) onSave({ ...form, priority: autoPriority }); }}
             disabled={saving}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-0"
-          >
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white border-0">
             {saving
               ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Adding…</>
-              : <><Check className="w-4 h-4 mr-1.5" />Add to Queue</>}
+              : <><Check className="w-4 h-4 mr-1.5" />Add Walk-in</>}
           </Button>
         </div>
       </div>
@@ -445,7 +477,7 @@ function RemoveModal({ patient, onClose, onConfirm }) {
 ═══════════════════════════════ */
 function DoctorQueueCard({ doctor, queue, onUpdate, onRemove, onAddWalkin }) {
   const clr      = DR_COLORS[doctor.color] || DR_COLORS.blue;
-  const docQueue = queue.filter(q => q.doctor === doctor.name).sort((a, b) => a.num - b.num);
+  const docQueue = sortByPriority(queue.filter(q => q.doctor === doctor.name));
   const serving  = docQueue.find(q => ['ongoing', 'called'].includes(q.status));
   const waiting  = docQueue.filter(q => q.status === 'waiting');
   const done     = docQueue.filter(q => ['completed', 'no_show'].includes(q.status)).length;
@@ -489,12 +521,10 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onRemove, onAddWalkin }) {
               {serving.status === 'ongoing' ? '● Now Serving' : '◎ Called'}
             </p>
             <div className="flex items-center gap-2 mb-2">
-              <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm text-white flex-shrink-0 ${serving.status === 'ongoing' ? 'bg-green-500' : 'bg-blue-600'}`}>
-                {String(serving.num).padStart(2, '0')}
-              </span>
-              <div className="min-w-0">
+              <QueueNumChip num={serving.num} status={serving.status} priority={serving.priority} size="sm" />
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-gray-900 truncate">{serving.name}</p>
-                <TypeBadge type={serving.type} />
+                <PriorityBadge priority={serving.priority} />
               </div>
             </div>
             <div className="flex gap-1.5">
@@ -532,31 +562,35 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onRemove, onAddWalkin }) {
           {waiting.length === 0 && (
             <p className="text-xs text-gray-400 text-center py-3">No patients waiting</p>
           )}
-          {waiting.map((q, idx) => (
-            <div key={q.id} className={`flex items-center gap-2 p-2 rounded-xl border ${idx === 0 ? `${clr.pill} border-current` : 'bg-white border-gray-100 hover:bg-gray-50'}`}>
-              <span className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs flex-shrink-0 ${idx === 0 ? `${clr.badge} text-white` : 'bg-gray-100 text-gray-600'}`}>
-                {String(q.num).padStart(2, '0')}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-gray-900 truncate">{q.name}</p>
-                <TypeBadge type={q.type} />
+          {waiting.map((q, idx) => {
+            const pcfg = PRIORITY_CFG[q.priority] || PRIORITY_CFG.walkin;
+            return (
+              <div key={q.id} className={`flex items-center gap-2 p-2 rounded-xl border ${idx === 0 ? `${pcfg.bg} ${pcfg.border}` : 'bg-white border-gray-100 hover:bg-gray-50'}`}>
+                <QueueNumChip num={q.num} status={q.status} priority={q.priority} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-gray-900 truncate">{q.name}</p>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <PriorityBadge priority={q.priority} />
+                    {q.age && <span className="text-[10px] text-gray-400 font-medium">Age {q.age}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-0.5 flex-shrink-0">
+                  <button onClick={() => onUpdate(q.id, 'called')} title="Call"
+                    className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300">
+                    <Mic className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => onUpdate(q.id, 'no_show')} title="No-show"
+                    className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600">
+                    <UserX className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => onRemove(q.id, q.name)} title="Remove"
+                    className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-300">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-0.5 flex-shrink-0">
-                <button onClick={() => onUpdate(q.id, 'called')} title="Call"
-                  className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300">
-                  <Mic className="w-3 h-3" />
-                </button>
-                <button onClick={() => onUpdate(q.id, 'no_show')} title="No-show"
-                  className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600">
-                  <UserX className="w-3 h-3" />
-                </button>
-                <button onClick={() => onRemove(q.id, q.name)} title="Remove"
-                  className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-300">
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -567,62 +601,138 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onRemove, onAddWalkin }) {
    MAIN PAGE
 ═══════════════════════════════ */
 export default function QueuePanel() {
-  const [queue,      setQueue]      = useState(INIT_QUEUE);
+  const [queue,      setQueue]      = useState([]);
+  const [patientsDb, setPatientsDb] = useState([]);
+  const [doctorsDb,  setDoctorsDb]  = useState([]);
   const [viewMode,   setViewMode]   = useState('list');
   const [filterDoc,  setFilterDoc]  = useState('');
-  const [filterType, setFilterType] = useState('');
+  const [filterPri,  setFilterPri]  = useState('');
+  const [filterPatient, setFilterPatient] = useState('');
   const [modal,      setModal]      = useState(null);
   const [saving,     setSaving]     = useState(false);
   const [time,       setTime]       = useState(getNow());
 
-  React.useEffect(() => {
+  useEffect(() => {
     const t = setInterval(() => setTime(getNow()), 60000);
     return () => clearInterval(t);
   }, []);
 
-  const totalWaiting = queue.filter(q => q.status === 'waiting').length;
-  const nowServing   = queue.find(q => q.status === 'ongoing') || queue.find(q => q.status === 'called');
-  const nextWaiting  = queue.filter(q => q.status === 'waiting').sort((a, b) => a.num - b.num)[0];
-  const walkinToday  = queue.filter(q => q.type === 'walkin').length;
-  const nextNum      = Math.max(...queue.map(q => q.num), 0) + 1;
-
-  const tableData = useMemo(() => {
-    return queue
-      .filter(q => {
-        if (filterDoc  && q.doctor !== filterDoc)  return false;
-        if (filterType && q.type   !== filterType)  return false;
-        return true;
+  useEffect(() => {
+    const date = getTodayLocal();
+    api.queue.getAll(date)
+      .then((rows) => {
+        if (!Array.isArray(rows)) return;
+        setQueue(rows.map(normalizeQueueRow));
       })
-      .sort((a, b) => a.num - b.num);
-  }, [queue, filterDoc, filterType]);
+      .catch((err) => console.error(err));
+  }, []);
 
-  const updateStatus = (id, status) =>
+  useEffect(() => {
+    api.patients.getAll('')
+      .then((rows) => {
+        if (!Array.isArray(rows)) return;
+        setPatientsDb(rows.map((p) => ({
+          id: p.id,
+          name: p.name ?? `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim(),
+          age: p.age ?? '',
+          contact: p.contact ?? p.mobile ?? '',
+          lastVisit: p.last_visit ?? '',
+          doctor: p.doctor ?? '',
+        })));
+      })
+      .catch((err) => console.error(err));
+  }, []);
+
+  useEffect(() => {
+    api.doctors.getAll()
+      .then((rows) => {
+        if (!Array.isArray(rows)) return;
+        setDoctorsDb(rows.map((d, i) => ({
+          id: d.id ?? `d-${i + 1}`,
+          name: d.name?.startsWith('Dr.') ? d.name : `Dr. ${d.name ?? ''}`.trim(),
+          specialty: d.specialization || 'General Medicine',
+          color: DR_COLOR_KEYS[i % DR_COLOR_KEYS.length],
+        })));
+      })
+      .catch((err) => console.error(err));
+  }, []);
+
+  const doctorsForView = useMemo(() => {
+    if (doctorsDb.length > 0) return doctorsDb;
+    const names = Array.from(new Set(queue.map(q => q.doctor).filter(Boolean)));
+    return names.map((name, i) => ({
+      id: `qdoc-${i + 1}`,
+      name,
+      specialty: 'General Medicine',
+      color: DR_COLOR_KEYS[i % DR_COLOR_KEYS.length],
+    }));
+  }, [doctorsDb, queue]);
+
+  const totalWaiting  = queue.filter(q => q.status === 'waiting').length;
+  const seniorWaiting = queue.filter(q => q.status === 'waiting' && q.priority === 'senior').length;
+  const nextWaiting   = sortByPriority(queue.filter(q => q.status === 'waiting'))[0];
+  const nowServing    = queue.find(q => q.status === 'ongoing') || queue.find(q => q.status === 'called');
+  const nextNum       = Math.max(...queue.map(q => q.num), 0) + 1;
+
+  const tableData = useMemo(() =>
+    sortByPriority(queue.filter(q => {
+      const patientNeedle = filterPatient.trim().toLowerCase();
+      if (patientNeedle) {
+        const searchable = `${q.name ?? ''} ${q.contact ?? ''}`.toLowerCase();
+        if (!searchable.includes(patientNeedle)) return false;
+      }
+      if (filterDoc && q.doctor   !== filterDoc) return false;
+      if (filterPri && q.priority !== filterPri) return false;
+      return true;
+    })),
+    [queue, filterDoc, filterPri, filterPatient]
+  );
+
+  const updateStatus = async (id, status) => {
     setQueue(prev => prev.map(q => q.id === id ? { ...q, status } : q));
-
-  const removeFromQueue = (id) => {
-    setQueue(prev => prev.filter(q => q.id !== id));
-    setModal(null);
+    if (!Number.isFinite(Number(id))) return;
+    try {
+      await api.queue.updateStatus(id, status);
+    } catch (err) {
+      console.error(err);
+    }
   };
+  const removeFromQueue = (id)         => { setQueue(prev => prev.filter(q => q.id !== id)); setModal(null); };
 
-  const addWalkin = (form) => {
+  const addWalkin = async (form) => {
     setSaving(true);
-    setTimeout(() => {
+    const addLocal = () => {
       const n = Math.max(...queue.map(q => q.num), 0) + 1;
       setQueue(prev => [...prev, {
-        id: `Q${String(_counter).padStart(3, '0')}`,
-        num: n,
-        name: form.name,
-        contact: form.contact,
-        doctor: form.doctor || 'TBD',
-        type: 'walkin',
-        reason: form.reason,
-        status: 'waiting',
-        arrival: getNow(),
+        id:       `Q${String(_counter).padStart(3, '0')}`,
+        num:      n,
+        name:     form.name,
+        age:      form.age || null,
+        contact:  form.contact,
+        doctor:   form.doctor || 'TBD',
+        priority: form.priority,   // already derived in modal
+        reason:   form.reason,
+        status:   'waiting',
+        arrival:  getNow(),
       }]);
       _counter++;
+    };
+
+    try {
+      if (!form.patientId) throw new Error('Missing patientId');
+      const created = await api.queue.addWalkin({
+        patient_id: form.patientId,
+        doctor_id: null,
+        priority: form.priority,
+      });
+      setQueue(prev => [...prev, normalizeQueueRow(created)]);
+    } catch (err) {
+      console.error(err);
+      addLocal();
+    } finally {
       setSaving(false);
       setModal(null);
-    }, 500);
+    }
   };
 
   return (
@@ -651,6 +761,7 @@ export default function QueuePanel() {
                 <LayoutGrid className="w-3.5 h-3.5" /> Per Doctor
               </button>
             </div>
+            {/* ── Walk-in button (not "Add Queue") ── */}
             <Button onClick={() => setModal({ type: 'walkin', preDoctor: '' })}
               className="bg-blue-600 hover:bg-blue-700 text-white">
               <UserPlus className="w-4 h-4 mr-2" /> Add Walk-in
@@ -660,7 +771,9 @@ export default function QueuePanel() {
 
         {/* ── KPI CARDS ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Total Waiting"  value={totalWaiting}
+          <KPICard label="Total Waiting"
+            value={totalWaiting}
+            sub={seniorWaiting > 0 ? `${seniorWaiting} senior${seniorWaiting > 1 ? 's' : ''}` : undefined}
             icon={Users} iconBg="bg-blue-50" iconColor="text-blue-600" />
           <KPICard
             label="Now Serving"
@@ -670,16 +783,20 @@ export default function QueuePanel() {
           <KPICard
             label="Next in Queue"
             value={nextWaiting ? `#${String(nextWaiting.num).padStart(2, '0')}` : '—'}
-            sub={nextWaiting ? nextWaiting.name : 'Queue is clear'}
+            sub={nextWaiting ? `${nextWaiting.name} · ${PRIORITY_CFG[nextWaiting.priority]?.label}` : 'Queue is clear'}
             icon={Bell} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
-          <KPICard label="Walk-ins Today" value={walkinToday}
-            icon={UserPlus} iconBg="bg-blue-50" iconColor="text-blue-600" />
+          <KPICard label="Senior Patients"
+            value={queue.filter(q => q.priority === 'senior').length}
+            sub="age 60+ · highest priority"
+            icon={Star} iconBg="bg-rose-50" iconColor="text-rose-500" />
         </div>
 
-        {/* ── LEGEND ── */}
+        {/* ── LEGEND CARD ── */}
         <Card>
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-6">
+
+              {/* Status */}
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Status Legend</p>
                 <div className="flex flex-wrap gap-3">
@@ -691,6 +808,8 @@ export default function QueuePanel() {
                   ))}
                 </div>
               </div>
+
+              {/* Queue Flow */}
               <div className="border-l border-gray-100 pl-6">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Queue Flow</p>
                 <div className="flex items-center gap-1.5 text-xs text-gray-500 flex-wrap">
@@ -702,6 +821,21 @@ export default function QueuePanel() {
                   ))}
                 </div>
               </div>
+
+              {/* Priority */}
+              <div className="border-l border-gray-100 pl-6">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Priority Level</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {Object.entries(PRIORITY_CFG).map(([key, cfg]) => (
+                    <span key={key} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                      {cfg.order}. {cfg.label}
+                    </span>
+                  ))}
+                  <span className="text-xs text-gray-400 font-medium">— Age 60+ auto-assigned as Senior.</span>
+                </div>
+              </div>
+
             </div>
           </CardContent>
         </Card>
@@ -716,13 +850,22 @@ export default function QueuePanel() {
                   <span className="text-xs font-normal text-gray-400">{tableData.length} patient{tableData.length !== 1 ? 's' : ''}</span>
                 </CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative w-52">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      value={filterPatient}
+                      onChange={(e) => setFilterPatient(e.target.value)}
+                      placeholder="Search patient..."
+                      className={`${inputCls} pl-8 py-1.5`}
+                    />
+                  </div>
                   <SelectBox value={filterDoc} onChange={v => setFilterDoc(v)}
                     placeholder="All Doctors" className="w-44"
-                    options={DOCTORS.map(d => ({ value: d.name, label: d.name }))} />
-                  <SelectBox value={filterType} onChange={v => setFilterType(v)}
-                    placeholder="All Types" className="w-36"
-                    options={[{ value: 'appointment', label: 'Appointment' }, { value: 'walkin', label: 'Walk-in' }]} />
-                  <Button variant="outline" size="sm" onClick={() => { setFilterDoc(''); setFilterType(''); }}>
+                    options={doctorsForView.map(d => ({ value: d.name, label: d.name }))} />
+                  <SelectBox value={filterPri} onChange={v => setFilterPri(v)}
+                    placeholder="All Priority" className="w-36"
+                    options={Object.entries(PRIORITY_CFG).map(([k, v]) => ({ value: k, label: v.label }))} />
+                  <Button variant="outline" size="sm" onClick={() => { setFilterPatient(''); setFilterDoc(''); setFilterPri(''); }}>
                     <RefreshCw className="w-3.5 h-3.5 mr-1" /> Reset
                   </Button>
                 </div>
@@ -734,7 +877,7 @@ export default function QueuePanel() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-y border-gray-100 bg-gray-50">
-                      {['Queue #', 'Patient', 'Type', 'Doctor', 'Reason', 'Arrival', 'Status', 'Actions'].map(h => (
+                      {['Queue #', 'Patient', 'Age', 'Priority', 'Doctor', 'Reason', 'Arrival', 'Status', 'Actions'].map(h => (
                         <th key={h} className="text-left py-2.5 px-3 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -742,7 +885,7 @@ export default function QueuePanel() {
                   <tbody className="divide-y divide-gray-50">
                     {tableData.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="text-center py-14">
+                        <td colSpan={9} className="text-center py-14">
                           <Users className="w-10 h-10 mx-auto text-gray-200 mb-2" />
                           <p className="text-sm text-gray-400">No patients in queue</p>
                         </td>
@@ -752,21 +895,28 @@ export default function QueuePanel() {
                       const isOngoing = q.status === 'ongoing';
                       const isCalled  = q.status === 'called';
                       const isDone    = ['completed', 'no_show'].includes(q.status);
-                      const drColor   = DOCTORS.find(d => d.name === q.doctor)?.color || 'blue';
+                      const isSenior  = q.priority === 'senior';
+                      const drColor   = doctorsForView.find(d => d.name === q.doctor)?.color || 'blue';
                       const clr       = DR_COLORS[drColor];
                       return (
-                        <tr key={q.id} className={`transition-colors ${isOngoing ? 'bg-green-50/40' : isCalled ? 'bg-blue-50/40' : isDone ? 'opacity-50' : 'hover:bg-gray-50'}`}>
+                        <tr key={q.id} className={`transition-colors
+                          ${isOngoing ? 'bg-green-50/40' : isCalled ? 'bg-blue-50/40' : isDone ? 'opacity-50' : isSenior ? 'bg-rose-50/30' : 'hover:bg-gray-50'}
+                          ${isSenior && !isDone ? 'border-l-2 border-l-rose-400' : ''}`}>
                           <td className="py-3 px-3">
-                            <span className={`inline-flex w-9 h-9 rounded-xl items-center justify-center font-black text-sm
-                              ${isOngoing ? 'bg-green-500 text-white' : isCalled ? 'bg-blue-600 text-white' : isDone ? 'bg-gray-200 text-gray-400' : 'bg-gray-100 text-gray-700'}`}>
-                              {String(q.num).padStart(2, '0')}
-                            </span>
+                            <QueueNumChip num={q.num} status={q.status} priority={q.priority} />
                           </td>
                           <td className="py-3 px-3">
                             <p className="font-semibold text-gray-900 whitespace-nowrap">{q.name}</p>
                             {q.contact && <p className="text-xs text-gray-400">{q.contact}</p>}
                           </td>
-                          <td className="py-3 px-3"><TypeBadge type={q.type} /></td>
+                          <td className="py-3 px-3 text-xs font-semibold text-gray-600 whitespace-nowrap">
+                            {q.age ? (
+                              <span className={q.age >= 60 ? 'text-rose-600 font-bold' : ''}>{q.age}</span>
+                            ) : '—'}
+                          </td>
+                          <td className="py-3 px-3">
+                            <PriorityBadge priority={q.priority} />
+                          </td>
                           <td className="py-3 px-3">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold ${clr.pill}`}>
                               <Stethoscope className="w-3 h-3 flex-shrink-0" />
@@ -825,7 +975,7 @@ export default function QueuePanel() {
         {/* ── PER DOCTOR VIEW ── */}
         {viewMode === 'doctor' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {DOCTORS.map(doctor => (
+            {doctorsForView.map(doctor => (
               <DoctorQueueCard
                 key={doctor.id}
                 doctor={doctor}
@@ -848,6 +998,8 @@ export default function QueuePanel() {
           onClose={() => setModal(null)}
           onSave={addWalkin}
           saving={saving}
+          patients={patientsDb}
+          doctors={doctorsForView}
         />
       )}
       {modal?.type === 'remove' && (

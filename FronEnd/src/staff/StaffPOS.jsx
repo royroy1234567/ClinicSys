@@ -42,7 +42,7 @@ const apiFetch = async (path, options = {}) => {
 
 const PAYMENT_METHODS = [
   { value: 'cash',  label: 'Cash',  icon: Banknote   },
-  { value: 'gcash', label: 'GCash', icon: Smartphone },
+
 ];
 
 const CATEGORIES = ['all', 'consultation', 'procedure', 'fee'];
