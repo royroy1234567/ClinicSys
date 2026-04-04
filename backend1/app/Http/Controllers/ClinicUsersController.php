@@ -103,6 +103,40 @@ class ClinicUsersController extends Controller
         return response()->json($this->formatUser($user));
     }
 
+    public function getAvailability($id)
+    {
+        $user = clinic_users::findOrFail($id);
+        if ($user->role !== 'Doctor') {
+            return response()->json(['message' => 'Availability is only for doctors.'], 422);
+        }
+
+        return response()->json([
+            'user_id' => $user->user_id,
+            'availability_status' => strtolower($user->availability_status ?: 'unavailable'),
+        ]);
+    }
+
+    public function updateAvailability(Request $request, $id)
+    {
+        $request->validate([
+            'availability_status' => 'required|in:available,unavailable',
+        ]);
+
+        $user = clinic_users::findOrFail($id);
+        if ($user->role !== 'Doctor') {
+            return response()->json(['message' => 'Availability is only for doctors.'], 422);
+        }
+
+        $user->availability_status = $request->availability_status;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Doctor availability updated.',
+            'user_id' => $user->user_id,
+            'availability_status' => strtolower($user->availability_status),
+        ]);
+    }
+
     private function formatUser(clinic_users $user): array
     {
         return [
@@ -115,6 +149,7 @@ class ClinicUsersController extends Controller
             'license_number' => $user->license_number,
             'role'           => $user->role,
             'status'         => $user->status,
+            'availability_status' => strtolower($user->availability_status ?: 'unavailable'),
             'created_at'     => $user->created_at,
         ];
     }

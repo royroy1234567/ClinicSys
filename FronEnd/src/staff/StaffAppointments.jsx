@@ -329,7 +329,7 @@ function ViewModal({ apt, onClose, onCheckin }) {
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Appointment Details</h2>
-            <p className="text-xs text-gray-400 mt-0.5 font-mono">{apt.id}</p>
+
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
         </div>
@@ -372,47 +372,14 @@ function ViewModal({ apt, onClose, onCheckin }) {
             </div>
           )}
 
-          {apt.status==='scheduled' && (
-            <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-              onClick={()=>{ onCheckin(apt.id); onClose(); }}>
-              <LogIn className="w-4 h-4 mr-2" /> Check-in Patient
-            </Button>
-          )}
+
         </div>
       </div>
     </div>
   );
 }
 
-/* ══════════════════════════════════════
-   CHECK-IN MODAL
-══════════════════════════════════════ */
-function CheckinModal({ apt, nextQueue, onClose, onConfirm }) {
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mx-auto mb-4">
-          <LogIn className="w-6 h-6 text-indigo-600" />
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 text-center">Check-in Patient</h3>
-        <p className="text-sm text-gray-500 text-center mt-1 mb-4">{apt?.patient}</p>
 
-        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-5 text-center">
-          <p className="text-xs text-indigo-600 font-bold uppercase tracking-wide mb-1">Assigned Queue Number</p>
-          <p className="text-4xl font-black text-indigo-700">{nextQueue}</p>
-          <p className="text-xs text-indigo-500 mt-1">{apt?.doctor} · {fmtTime(apt?.start_time)}</p>
-        </div>
-
-        <div className="flex gap-3">
-          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white border-0" onClick={onConfirm}>
-            <Check className="w-4 h-4 mr-1.5" /> Confirm Check-in
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════
    NORMALISE API RESPONSE → internal shape
@@ -650,7 +617,7 @@ const StaffAppointments = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-y border-gray-100 bg-gray-50">
-                    {['Appt ID','Date','Time','Patient','Doctor','Type','Status','Queue No.','Actions'].map(h=>(
+                    {['Date','Time','Patient','Doctor','Type','Status','Actions'].map(h=>(
                       <th key={h} className="text-left py-2.5 px-3 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -677,7 +644,6 @@ const StaffAppointments = () => {
 
                   {!loading && paginated.map(apt=>(
                     <tr key={apt.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="py-2.5 px-3 font-mono text-xs font-bold text-gray-400 whitespace-nowrap">{apt.id}</td>
                       <td className="py-2.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fmtDate(apt.date)}</td>
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         <p className="text-xs font-semibold text-gray-800">{fmtTime(apt.start_time)}</p>
@@ -687,23 +653,13 @@ const StaffAppointments = () => {
                       <td className="py-2.5 px-3 text-xs text-gray-600 whitespace-nowrap">{apt.doctor}</td>
                       <td className="py-2.5 px-3 text-xs text-gray-500 whitespace-nowrap">{apt.type}</td>
                       <td className="py-2.5 px-3"><StatusBadge status={apt.status} /></td>
-                      <td className="py-2.5 px-3 text-center">
-                        {apt.queue
-                          ? <span className="inline-flex w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 text-xs font-black items-center justify-center">{apt.queue}</span>
-                          : <span className="text-gray-300 text-xs">—</span>}
-                      </td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1">
                           <button onClick={()=>setModal({type:'view', apt})} title="View Details"
-                            className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-colors">
-                            <Eye className="w-3.5 h-3.5" />
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all">
+ <Eye className="w-3.5 h-3.5" /> View
                           </button>
-                          {apt.status==='scheduled' && (
-                            <button onClick={()=>setModal({type:'checkin', apt})} title="Check-in Patient"
-                              className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors">
-                              <LogIn className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+              
                         </div>
                       </td>
                     </tr>

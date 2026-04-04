@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import MainLayout from "../components/layouts/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -10,29 +11,44 @@ import {
 import {
   Calendar, Clock, Users, UserCheck, TrendingUp, Activity,
   ArrowUpRight, ArrowDownRight, CalendarDays, FileText, Printer,
-  Download, BarChart2, RefreshCw, Star, AlertCircle, DollarSign,
+  Download, BarChart2, RefreshCw, AlertCircle, DollarSign,
   CreditCard, ReceiptText, BadgePercent, ChevronDown, LayoutDashboard,
 } from "lucide-react";
+import { api } from "../services/Api";
 
-/* ─── Palette ─── */
-const BLUE   = "#2563EB";
-const GREEN  = "#16A34A";
+const BLUE = "#2563EB";
+const GREEN = "#16A34A";
 const YELLOW = "#F59E0B";
-const RED    = "#DC2626";
-const TEAL   = "#0D9488";
-const GRAY   = "#94A3B8";
+const RED = "#DC2626";
+const TEAL = "#0D9488";
+const GRAY = "#94A3B8";
 const PURPLE = "#7C3AED";
 const ORANGE = "#EA580C";
 
-/* ════════════════════════════════════════════
-   SHARED UI
-════════════════════════════════════════════ */
+const RANGE_FILTERS = [
+  { key: "monthly", label: "Monthly" },
+  { key: "quarterly", label: "Quarterly" },
+  { key: "yearly", label: "Yearly" },
+];
+
+const VIEWS = [
+  { key: "overview", label: "Overview", icon: LayoutDashboard, color: "text-blue-600", bg: "bg-blue-50" },
+  { key: "daily", label: "Daily Appointments", icon: Calendar, color: "text-indigo-600", bg: "bg-indigo-50" },
+  { key: "status", label: "Appointment Status", icon: BarChart2, color: "text-green-600", bg: "bg-green-50" },
+  { key: "doctor", label: "Doctor Performance", icon: UserCheck, color: "text-purple-600", bg: "bg-purple-50" },
+  { key: "patient", label: "Patient Visits", icon: Users, color: "text-teal-600", bg: "bg-teal-50" },
+  { key: "followup", label: "Follow-Up (CRM)", icon: RefreshCw, color: "text-yellow-600", bg: "bg-yellow-50" },
+  { key: "engagement", label: "Patient Engagement", icon: TrendingUp, color: "text-rose-600", bg: "bg-rose-50" },
+  { key: "queue", label: "Queue Management", icon: Clock, color: "text-orange-600", bg: "bg-orange-50" },
+  { key: "sales", label: "Sales & Revenue", icon: DollarSign, color: "text-emerald-700", bg: "bg-emerald-50" },
+];
+
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-gray-100 rounded-lg shadow-lg p-3 text-xs">
       <p className="font-semibold text-gray-700 mb-1">{label}</p>
-      {payload.map(p => (
+      {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }} className="font-medium">{p.name}: {p.value}</p>
       ))}
     </div>
@@ -44,8 +60,15 @@ const PieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
   const R = Math.PI / 180;
   const r = innerRadius + (outerRadius - innerRadius) * 0.5;
   return (
-    <text x={cx + r * Math.cos(-midAngle * R)} y={cy + r * Math.sin(-midAngle * R)}
-      fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
+    <text
+      x={cx + r * Math.cos(-midAngle * R)}
+      y={cy + r * Math.sin(-midAngle * R)}
+      fill="white"
+      textAnchor="middle"
+      dominantBaseline="central"
+      fontSize={11}
+      fontWeight={700}
+    >
       {`${(percent * 100).toFixed(0)}%`}
     </text>
   );
@@ -53,11 +76,11 @@ const PieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
 
 const StatusBadge = ({ status }) => {
   const map = {
-    scheduled: "bg-blue-100 text-blue-700", ongoing: "bg-yellow-100 text-yellow-700",
-    completed: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700",
-    no_show: "bg-gray-100 text-gray-600", overdue: "bg-red-100 text-red-700",
-    upcoming: "bg-blue-100 text-blue-700", paid: "bg-green-100 text-green-700",
-    pending: "bg-yellow-100 text-yellow-700",
+    completed: "bg-green-100 text-green-700",
+    cancelled: "bg-red-100 text-red-700",
+    no_show: "bg-gray-100 text-gray-600",
+    overdue: "bg-red-100 text-red-700",
+    upcoming: "bg-blue-100 text-blue-700",
   };
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${map[status] || "bg-gray-100 text-gray-600"}`}>
@@ -66,16 +89,14 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const PatientTypeBadge = ({ type }) => {
-  const map = { Regular: "bg-gray-100 text-gray-600", Chronic: "bg-orange-100 text-orange-700", VIP: "bg-purple-100 text-purple-700" };
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${map[type] || ""}`}>{type}</span>;
-};
-
 const SelectBox = ({ value, onChange, options, className = "" }) => (
   <div className={`relative ${className}`}>
-    <select value={value} onChange={e => onChange(e.target.value)}
-      className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full appearance-none border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+    >
+      {options.map((o) => <option key={o.value || o} value={o.value || o}>{o.label || o}</option>)}
     </select>
     <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
   </div>
@@ -134,351 +155,281 @@ const Td = ({ children, className = "" }) => (
   <td className={`py-3 px-4 text-sm ${className}`}>{children}</td>
 );
 
-/* ════════════════════════════════════════════
-   VIEW + REPORT CONFIG
-════════════════════════════════════════════ */
-const VIEWS = [
-  { key: "overview",    label: "Overview",            icon: LayoutDashboard, color: "text-blue-600",    bg: "bg-blue-50"    },
-  { key: "daily",       label: "Daily Appointments",  icon: Calendar,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
-  { key: "status",      label: "Appointment Status",  icon: BarChart2,       color: "text-green-600",   bg: "bg-green-50"   },
-  { key: "doctor",      label: "Doctor Performance",  icon: UserCheck,       color: "text-purple-600",  bg: "bg-purple-50"  },
-  { key: "patient",     label: "Patient Visits",      icon: Users,           color: "text-teal-600",    bg: "bg-teal-50"    },
-  { key: "followup",    label: "Follow-Up (CRM)",     icon: RefreshCw,       color: "text-yellow-600",  bg: "bg-yellow-50"  },
-  { key: "engagement",  label: "Patient Engagement",  icon: TrendingUp,      color: "text-rose-600",    bg: "bg-rose-50"    },
-  { key: "queue",       label: "Queue Management",    icon: Clock,           color: "text-orange-600",  bg: "bg-orange-50"  },
-  { key: "sales",       label: "Sales & Revenue",     icon: DollarSign,      color: "text-emerald-700", bg: "bg-emerald-50" },
-];
-
-/* ════════════════════════════════════════════
-   DEMO DATA
-════════════════════════════════════════════ */
-const DATE_FILTERS = [
-  { key: "today", label: "Today" },
-  { key: "week",  label: "This Week" },
-  { key: "month", label: "This Month" },
-];
-
-const KPI_DATA = {
-  today: { total: 30,  completed: 19,  pending: 9,  patients: 423, doctors: 5, cancelled: 2,  revenue: "₱18,400",  trend: { total: 8,  comp: 5,  pend: -2,  pat: 12, canc: -3,  rev: 6  } },
-  week:  { total: 95,  completed: 80,  pending: 10, patients: 423, doctors: 5, cancelled: 5,  revenue: "₱58,200",  trend: { total: 14, comp: 11, pend: -5,  pat: 12, canc: -8,  rev: 18 } },
-  month: { total: 303, completed: 261, pending: 24, patients: 423, doctors: 5, cancelled: 18, revenue: "₱241,500", trend: { total: 22, comp: 18, pend: -10, pat: 12, canc: -15, rev: 21 } },
+const pctDelta = (arr, key) => {
+  if (!arr?.length || arr.length < 2) return 0;
+  const cur = Number(arr[arr.length - 1]?.[key] || 0);
+  const prev = Number(arr[arr.length - 2]?.[key] || 0);
+  if (!prev) return cur ? 100 : 0;
+  return Math.round(((cur - prev) / prev) * 100);
 };
 
-const TREND_DATA = {
-  today: [
-    { day: "8 AM",  appointments: 3, completed: 3, cancelled: 0 },
-    { day: "9 AM",  appointments: 5, completed: 5, cancelled: 0 },
-    { day: "10 AM", appointments: 4, completed: 3, cancelled: 1 },
-    { day: "11 AM", appointments: 6, completed: 5, cancelled: 1 },
-    { day: "1 PM",  appointments: 4, completed: 2, cancelled: 0 },
-    { day: "2 PM",  appointments: 5, completed: 2, cancelled: 0 },
-    { day: "3 PM",  appointments: 3, completed: 1, cancelled: 0 },
-  ],
-  week: [
-    { day: "Mon", appointments: 12, completed: 10, cancelled: 2 },
-    { day: "Tue", appointments: 18, completed: 15, cancelled: 3 },
-    { day: "Wed", appointments: 14, completed: 12, cancelled: 2 },
-    { day: "Thu", appointments: 22, completed: 19, cancelled: 3 },
-    { day: "Fri", appointments: 20, completed: 16, cancelled: 4 },
-    { day: "Sat", appointments: 9,  completed: 8,  cancelled: 1 },
-  ],
-  month: [
-    { day: "Week 1", appointments: 68, completed: 58, cancelled: 10 },
-    { day: "Week 2", appointments: 74, completed: 65, cancelled: 9  },
-    { day: "Week 3", appointments: 82, completed: 70, cancelled: 12 },
-    { day: "Week 4", appointments: 79, completed: 68, cancelled: 11 },
-  ],
-};
+const sumField = (arr, key) => arr?.reduce((s, r) => s + Number(r?.[key] || 0), 0) || 0;
 
-const STATUS_DATA = {
-  today: [
-    { name: "Completed", value: 19, fill: GREEN  },
-    { name: "Scheduled", value: 8,  fill: BLUE   },
-    { name: "Ongoing",   value: 1,  fill: YELLOW },
-    { name: "Cancelled", value: 2,  fill: RED    },
-  ],
-  week: [
-    { name: "Completed", value: 80, fill: GREEN  },
-    { name: "Scheduled", value: 45, fill: BLUE   },
-    { name: "Ongoing",   value: 12, fill: YELLOW },
-    { name: "Cancelled", value: 18, fill: RED    },
-    { name: "No Show",   value: 6,  fill: GRAY   },
-  ],
-  month: [
-    { name: "Completed", value: 261, fill: GREEN  },
-    { name: "Scheduled", value: 42,  fill: BLUE   },
-    { name: "Ongoing",   value: 6,   fill: YELLOW },
-    { name: "Cancelled", value: 61,  fill: RED    },
-    { name: "No Show",   value: 22,  fill: GRAY   },
-  ],
-};
+function OverviewSection({ data, rangeLabel }) {
+  const trend = data?.overview?.trend || [];
+  const status = data?.status?.trend || [];
+  const doctor = data?.doctor?.workload || [];
+  const patientTrend = data?.patient?.trend || [];
+  const salesTrend = data?.sales?.trend || [];
 
-const WORKLOAD_DATA = {
-  today: [
-    { doctor: "Dr. Smith",  appointments: 8  },
-    { doctor: "Dr. Chen",   appointments: 7  },
-    { doctor: "Dr. Torres", appointments: 5  },
-    { doctor: "Dr. Lim",    appointments: 6  },
-    { doctor: "Dr. Reyes",  appointments: 4  },
-  ],
-  week: [
-    { doctor: "Dr. Smith",  appointments: 14 },
-    { doctor: "Dr. Chen",   appointments: 11 },
-    { doctor: "Dr. Torres", appointments: 9  },
-    { doctor: "Dr. Lim",    appointments: 16 },
-    { doctor: "Dr. Reyes",  appointments: 7  },
-  ],
-  month: [
-    { doctor: "Dr. Smith",  appointments: 68 },
-    { doctor: "Dr. Chen",   appointments: 55 },
-    { doctor: "Dr. Torres", appointments: 47 },
-    { doctor: "Dr. Lim",    appointments: 73 },
-    { doctor: "Dr. Reyes",  appointments: 38 },
-  ],
-};
+  const totalAppointments = sumField(trend, "actual");
+  const completed = sumField(status, "completed");
+  const cancelled = sumField(status, "cancelled");
+  const revenue = sumField(salesTrend, "revenue");
+  const activeDoctors = doctor.length;
+  const totalPatients = sumField(patientTrend, "walkin") + sumField(patientTrend, "appointment");
 
-const PATIENT_TYPE_DATA = {
-  today: [{ name: "New",       value: 8,   fill: BLUE   }, { name: "Returning", value: 18,  fill: TEAL   }, { name: "Walk-in", value: 4,  fill: YELLOW }],
-  week:  [{ name: "New",       value: 38,  fill: BLUE   }, { name: "Returning", value: 52,  fill: TEAL   }, { name: "Walk-in", value: 10, fill: YELLOW }],
-  month: [{ name: "New",       value: 112, fill: BLUE   }, { name: "Returning", value: 160, fill: TEAL   }, { name: "Walk-in", value: 31, fill: YELLOW }],
-};
+  const tTotal = pctDelta(trend, "actual");
+  const tCompleted = pctDelta(status, "completed");
+  const tCancelled = pctDelta(status, "cancelled");
+  const tRevenue = pctDelta(salesTrend, "revenue");
 
-const MONTHLY_GROWTH = [
-  { month: "Oct", patients: 120, appointments: 210 },
-  { month: "Nov", patients: 135, appointments: 230 },
-  { month: "Dec", patients: 118, appointments: 195 },
-  { month: "Jan", patients: 148, appointments: 260 },
-  { month: "Feb", patients: 160, appointments: 285 },
-  { month: "Mar", patients: 175, appointments: 310 },
-];
-
-/* ── Report-specific data ── */
-const DAILY_DATA = [
-  { id: 1,  time: "08:00–08:30", patient: "John Doe",       doctor: "Dr. Sarah Smith",  reason: "Regular checkup",    status: "completed" },
-  { id: 2,  time: "08:30–09:00", patient: "Jane Smith",     doctor: "Dr. Michael Chen", reason: "Follow-up",          status: "completed" },
-  { id: 3,  time: "09:00–09:30", patient: "Robert Johnson", doctor: "Dr. James Lim",    reason: "Blood pressure",     status: "ongoing"   },
-  { id: 4,  time: "09:30–10:00", patient: "Maria Santos",   doctor: "Dr. Sarah Smith",  reason: "Fever & cough",      status: "scheduled" },
-  { id: 5,  time: "10:00–10:30", patient: "Carlos Reyes",   doctor: "Dr. Reyna Torres", reason: "Annual physical",    status: "scheduled" },
-  { id: 6,  time: "10:30–11:00", patient: "Ana Cruz",       doctor: "Dr. Ana Reyes",    reason: "Skin consultation",  status: "cancelled" },
-  { id: 7,  time: "11:00–11:30", patient: "Ben Torres",     doctor: "Dr. Michael Chen", reason: "Diabetes follow-up", status: "completed" },
-  { id: 8,  time: "13:00–13:30", patient: "Carla Mendoza",  doctor: "Dr. James Lim",    reason: "Asthma checkup",     status: "no_show"   },
-  { id: 9,  time: "13:30–14:00", patient: "David Lim",      doctor: "Dr. Sarah Smith",  reason: "Post-op visit",      status: "completed" },
-  { id: 10, time: "14:00–14:30", patient: "Elena Ramos",    doctor: "Dr. Reyna Torres", reason: "Hypertension",       status: "scheduled" },
-];
-
-const STATUS_CHART = [
-  { name: "Completed", value: 261, fill: GREEN  },
-  { name: "Scheduled", value: 42,  fill: BLUE   },
-  { name: "Ongoing",   value: 6,   fill: YELLOW },
-  { name: "Cancelled", value: 61,  fill: RED    },
-  { name: "No-show",   value: 22,  fill: GRAY   },
-];
-
-const DOCTOR_DATA = [
-  { id: 1, doctor: "Dr. Sarah Smith",  specialty: "General Medicine",  total: 92,  completed: 80, cancelled: 8, noshow: 4, avgPerDay: 15.3, rating: 4.9 },
-  { id: 2, doctor: "Dr. Michael Chen", specialty: "Pediatrics",        total: 78,  completed: 68, cancelled: 7, noshow: 3, avgPerDay: 13.0, rating: 4.8 },
-  { id: 3, doctor: "Dr. James Lim",    specialty: "General Medicine",  total: 101, completed: 88, cancelled: 9, noshow: 4, avgPerDay: 16.8, rating: 4.7 },
-  { id: 4, doctor: "Dr. Reyna Torres", specialty: "Internal Medicine", total: 65,  completed: 56, cancelled: 6, noshow: 3, avgPerDay: 10.8, rating: 4.6 },
-  { id: 5, doctor: "Dr. Ana Reyes",    specialty: "Dermatology",       total: 47,  completed: 40, cancelled: 5, noshow: 2, avgPerDay: 7.8,  rating: 4.5 },
-];
-
-const PATIENT_DATA = [
-  { id: 1, patient: "John Doe",       visits: 12, lastVisit: "2026-02-28", type: "Regular", followup: "No"  },
-  { id: 2, patient: "Jane Smith",     visits: 8,  lastVisit: "2026-02-25", type: "Chronic", followup: "Yes" },
-  { id: 3, patient: "Robert Johnson", visits: 5,  lastVisit: "2026-03-01", type: "Regular", followup: "No"  },
-  { id: 4, patient: "Maria Santos",   visits: 20, lastVisit: "2026-02-20", type: "VIP",     followup: "Yes" },
-  { id: 5, patient: "Carlos Reyes",   visits: 3,  lastVisit: "2026-01-15", type: "Regular", followup: "No"  },
-  { id: 6, patient: "Ana Cruz",       visits: 15, lastVisit: "2026-02-10", type: "Chronic", followup: "Yes" },
-  { id: 7, patient: "Ben Torres",     visits: 9,  lastVisit: "2026-01-28", type: "Regular", followup: "Yes" },
-  { id: 8, patient: "Carla Mendoza",  visits: 6,  lastVisit: "2026-02-18", type: "Regular", followup: "No"  },
-];
-
-const FOLLOWUP_DATA = [
-  { id: 1, patient: "Ana Cruz",     lastVisit: "2026-02-10", followupDate: "2026-03-10", contact: "+63 912 001 0001", doctor: "Dr. Sarah Smith",  status: "overdue"  },
-  { id: 2, patient: "Ben Torres",   lastVisit: "2026-01-28", followupDate: "2026-03-05", contact: "+63 912 001 0002", doctor: "Dr. Michael Chen", status: "overdue"  },
-  { id: 3, patient: "Maria Santos", lastVisit: "2026-02-20", followupDate: "2026-03-06", contact: "+63 912 001 0003", doctor: "Dr. Sarah Smith",  status: "upcoming" },
-  { id: 4, patient: "David Lim",    lastVisit: "2026-01-15", followupDate: "2026-03-04", contact: "+63 912 001 0004", doctor: "Dr. James Lim",    status: "overdue"  },
-  { id: 5, patient: "Jane Smith",   lastVisit: "2026-02-25", followupDate: "2026-03-07", contact: "+63 912 001 0005", doctor: "Dr. Michael Chen", status: "upcoming" },
-  { id: 6, patient: "Carlos Reyes", lastVisit: "2026-01-15", followupDate: "2026-03-09", contact: "+63 912 001 0006", doctor: "Dr. Reyna Torres", status: "upcoming" },
-];
-
-const GROWTH_DATA = [
-  { month: "Oct", newPatients: 28, returning: 92,  inactive: 14 },
-  { month: "Nov", newPatients: 34, returning: 101, inactive: 11 },
-  { month: "Dec", newPatients: 22, returning: 96,  inactive: 18 },
-  { month: "Jan", newPatients: 41, returning: 107, inactive: 9  },
-  { month: "Feb", newPatients: 38, returning: 122, inactive: 7  },
-  { month: "Mar", newPatients: 45, returning: 130, inactive: 6  },
-];
-
-const PEAK_DAYS  = [
-  { day: "Mon", patients: 42 }, { day: "Tue", patients: 58 }, { day: "Wed", patients: 51 },
-  { day: "Thu", patients: 67 }, { day: "Fri", patients: 63 }, { day: "Sat", patients: 30 },
-];
-
-const PEAK_HOURS = [
-  { hour: "8AM", count: 8  }, { hour: "9AM",  count: 14 }, { hour: "10AM", count: 12 },
-  { hour: "11AM",count: 10 }, { hour: "12PM", count: 5  }, { hour: "1PM",  count: 11 },
-  { hour: "2PM", count: 9  }, { hour: "3PM",  count: 7  }, { hour: "4PM",  count: 4  },
-];
-
-const WEEKLY_APPTS = [
-  { day: "Mon", appointment: 30, walkIn: 12 }, { day: "Tue", appointment: 42, walkIn: 16 },
-  { day: "Wed", appointment: 38, walkIn: 13 }, { day: "Thu", appointment: 51, walkIn: 16 },
-  { day: "Fri", appointment: 47, walkIn: 16 }, { day: "Sat", appointment: 20, walkIn: 10 },
-];
-
-const QUEUE_DATA = [
-  { id: 1, hour: "8–9 AM",   served: 8,  avgWait: "8 min",  longest: "15 min" },
-  { id: 2, hour: "9–10 AM",  served: 12, avgWait: "12 min", longest: "22 min" },
-  { id: 3, hour: "10–11 AM", served: 10, avgWait: "10 min", longest: "18 min" },
-  { id: 4, hour: "11–12 PM", served: 9,  avgWait: "9 min",  longest: "16 min" },
-  { id: 5, hour: "1–2 PM",   served: 11, avgWait: "11 min", longest: "20 min" },
-  { id: 6, hour: "2–3 PM",   served: 8,  avgWait: "7 min",  longest: "14 min" },
-  { id: 7, hour: "3–4 PM",   served: 6,  avgWait: "6 min",  longest: "11 min" },
-];
-
-const SALES_TREND = [
-  { week: "Week 1", revenue: 52000 }, { week: "Week 2", revenue: 61500 },
-  { week: "Week 3", revenue: 70000 }, { week: "Week 4", revenue: 58000 },
-];
-
-const SALES_BY_SERVICE = [
-  { service: "General Consult",    amount: 98000 },
-  { service: "Follow-up",          amount: 52000 },
-  { service: "Specialist Consult", amount: 48500 },
-  { service: "Pediatric Consult",  amount: 26000 },
-  { service: "Executive Check-up", amount: 17000 },
-];
-
-const PAYMENT_DATA = [
-  { name: "Cash",        value: 128, fill: GREEN  },
-  { name: "GCash",       value: 74,  fill: BLUE   },
-  { name: "Credit Card", value: 38,  fill: PURPLE },
-  { name: "PhilHealth",  value: 21,  fill: TEAL   },
-];
-
-const MONTHLY_REVENUE = [
-  { month: "Oct", revenue: 182000, target: 175000 }, { month: "Nov", revenue: 198000, target: 185000 },
-  { month: "Dec", revenue: 171000, target: 190000 }, { month: "Jan", revenue: 215000, target: 200000 },
-  { month: "Feb", revenue: 228000, target: 210000 }, { month: "Mar", revenue: 241500, target: 225000 },
-];
-
-const SALES_TXN = [
-  { id: 1, date: "2026-03-03", patient: "John Doe",     service: "General Consult",    amount: "₱800",   method: "Cash",        status: "paid"    },
-  { id: 2, date: "2026-03-03", patient: "Jane Smith",   service: "Follow-up",          amount: "₱500",   method: "GCash",       status: "paid"    },
-  { id: 3, date: "2026-03-03", patient: "Maria Santos", service: "Executive Check-up", amount: "₱2,500", method: "Credit Card", status: "paid"    },
-  { id: 4, date: "2026-03-03", patient: "Carlos Reyes", service: "General Consult",    amount: "₱800",   method: "PhilHealth",  status: "paid"    },
-  { id: 5, date: "2026-03-02", patient: "Ana Cruz",     service: "Follow-up",          amount: "₱500",   method: "Cash",        status: "pending" },
-  { id: 6, date: "2026-03-01", patient: "Elena Ramos",  service: "Pediatric Consult",  amount: "₱900",   method: "GCash",       status: "pending" },
-];
-
-const DOCTORS_LIST  = ["All Doctors", "Dr. Sarah Smith", "Dr. Michael Chen", "Dr. James Lim", "Dr. Reyna Torres", "Dr. Ana Reyes"];
-const STATUSES_LIST = ["All Status", "Scheduled", "Ongoing", "Completed", "Cancelled", "No-show"];
-
-/* ════════════════════════════════════════════
-   OVERVIEW SECTION
-════════════════════════════════════════════ */
-function OverviewSection({ dateRange }) {
-  const kpi        = KPI_DATA[dateRange];
-  const trendData  = TREND_DATA[dateRange];
-  const statusData = STATUS_DATA[dateRange];
-  const workload   = WORKLOAD_DATA[dateRange];
-  const ptypes     = PATIENT_TYPE_DATA[dateRange];
-  const t          = kpi.trend;
-  const compLabel  = dateRange === "today" ? "vs yesterday" : dateRange === "week" ? "vs last week" : "vs last month";
-  const periodLabel = DATE_FILTERS.find(f => f.key === dateRange)?.label.toLowerCase();
+  const statusBreakdown = [
+    { name: "Completed", value: completed, fill: GREEN },
+    { name: "Cancelled", value: cancelled, fill: RED },
+    { name: "No Show", value: sumField(status, "no_show"), fill: GRAY },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <KPICard label="Total Appointments" value={kpi.total}     sub={periodLabel}       icon={Calendar}   iconBg="bg-blue-50"    iconColor="text-blue-600"    trend={t.total} trendLabel={compLabel} />
-        <KPICard label="Completed"          value={kpi.completed} sub="appointments"      icon={UserCheck}  iconBg="bg-green-50"   iconColor="text-green-600"   trend={t.comp}  trendLabel={compLabel} />
-        <KPICard label="Pending"            value={kpi.pending}   sub="remaining"         icon={Clock}      iconBg="bg-yellow-50"  iconColor="text-yellow-600"  trend={t.pend}  trendLabel={compLabel} />
-        <KPICard label="Total Patients"     value={kpi.patients}  sub="registered"        icon={Users}      iconBg="bg-teal-50"    iconColor="text-teal-600"    trend={t.pat}   trendLabel="this month" />
-        <KPICard label="Active Doctors"     value={kpi.doctors}   sub="on roster"         icon={Activity}   iconBg="bg-purple-50"  iconColor="text-purple-600"  />
-        <KPICard label="Revenue"            value={kpi.revenue}   sub={periodLabel}       icon={DollarSign} iconBg="bg-emerald-50" iconColor="text-emerald-600" trend={t.rev}   trendLabel={compLabel} />
+        <KPICard label="Total Appointments" value={totalAppointments} sub={rangeLabel} icon={Calendar} iconBg="bg-blue-50" iconColor="text-blue-600" trend={tTotal} trendLabel="vs previous bucket" />
+        <KPICard label="Completed" value={completed} sub="appointments" icon={UserCheck} iconBg="bg-green-50" iconColor="text-green-600" trend={tCompleted} trendLabel="vs previous bucket" />
+        <KPICard label="Cancelled" value={cancelled} sub="appointments" icon={AlertCircle} iconBg="bg-red-50" iconColor="text-red-600" trend={tCancelled} trendLabel="vs previous bucket" />
+        <KPICard label="Total Visits" value={totalPatients} sub="walk-in + appointment" icon={Users} iconBg="bg-teal-50" iconColor="text-teal-600" />
+        <KPICard label="Active Doctors" value={activeDoctors} sub="with workload data" icon={Activity} iconBg="bg-purple-50" iconColor="text-purple-600" />
+        <KPICard label="Revenue" value={`₱${Math.round(revenue).toLocaleString()}`} sub={rangeLabel} icon={DollarSign} iconBg="bg-emerald-50" iconColor="text-emerald-600" trend={tRevenue} trendLabel="vs previous bucket" />
       </div>
 
-      {/* Trend Line */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {dateRange === "today" ? "Hourly Trend (Today)" : dateRange === "week" ? "Daily Trend (This Week)" : "Weekly Trend (This Month)"}
-          </CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Overall Appointment Trend (Actual vs Forecast)</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={trendData} margin={{ top: 4, right: 20, left: -10, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={trend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-              <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} />
               <Tooltip content={<ChartTooltip />} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="appointments" stroke={BLUE}  strokeWidth={2.5} dot={{ r: 4 }} name="Total" />
-              <Line type="monotone" dataKey="completed"    stroke={GREEN} strokeWidth={2.5} dot={{ r: 4 }} name="Completed" />
-              <Line type="monotone" dataKey="cancelled"    stroke={RED}   strokeWidth={2}   dot={{ r: 4 }} strokeDasharray="4 2" name="Cancelled" />
+              <Legend iconType="circle" iconSize={8} />
+              <Line type="monotone" dataKey="actual" stroke={BLUE} strokeWidth={2.5} dot={{ r: 3 }} name="Actual Appointments" />
+              <Line type="monotone" dataKey="forecast" stroke={ORANGE} strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} name="Forecast Demand" />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
-      {/* Status + Workload */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-base">Appointment Status Breakdown</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Status Distribution</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={statusData} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={statusBreakdown}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]} name="Count">
-                  {statusData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  {statusBreakdown.map((e, i) => <Cell key={i} fill={e.fill} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">Doctor Workload ({DATE_FILTERS.find(f => f.key === dateRange)?.label})</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Predicted Future Demand</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={workload} layout="vertical" margin={{ top: 4, right: 20, left: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis dataKey="doctor" type="category" tick={{ fontSize: 11 }} width={90} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="appointments" fill={BLUE} radius={[0, 6, 6, 0]} name="Appointments" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="p-5 rounded-xl bg-blue-50 border border-blue-100">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">Forecasted next bucket demand</p>
+              <p className="text-4xl font-black text-blue-700 mt-2">{Math.round(data?.overview?.predicted_future_demand || 0)}</p>
+              <p className="text-xs text-blue-600 mt-1">Based on trend smoothing from historical appointment data.</p>
+            </div>
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
 
-      {/* Patient type + Monthly growth */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+function DailyPanel({ data }) {
+  const trend = data?.daily?.trend || [];
+  const peakTrend = data?.daily?.peak_trend || [];
+  const peakHour = [...peakTrend].sort((a, b) => b.actual - a.actual)[0];
+  const forecastPeak = [...peakTrend].sort((a, b) => b.forecast - a.forecast)[0];
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SmallKPI label="Actual Volume" value={sumField(trend, "actual")} icon={Calendar} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Forecast Volume" value={Math.round(sumField(trend, "forecast"))} icon={TrendingUp} iconBg="bg-orange-50" iconColor="text-orange-600" />
+        <SmallKPI label="Peak Hour" value={peakHour?.label || "—"} sub={`${peakHour?.actual || 0} actual`} icon={Clock} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
+        <SmallKPI label="Expected Peak" value={forecastPeak?.label || "—"} sub={`${Math.round(forecastPeak?.forecast || 0)} forecast`} icon={Activity} iconBg="bg-purple-50" iconColor="text-purple-600" />
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Appointment Volume Trend (Actual vs Forecast)</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={210}>
+            <LineChart data={trend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+              <Line type="monotone" dataKey="actual" stroke={BLUE} strokeWidth={2.5} name="Actual" />
+              <Line type="monotone" dataKey="forecast" stroke={ORANGE} strokeWidth={2} strokeDasharray="6 4" name="Forecast" />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Peak Hours (Actual vs Expected)</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={210}>
+            <BarChart data={peakTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+              <Bar dataKey="actual" fill={BLUE} radius={[4, 4, 0, 0]} name="Actual Peak Load" />
+              <Bar dataKey="forecast" fill={ORANGE} radius={[4, 4, 0, 0]} name="Expected Peak Load" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function StatusPanel({ data }) {
+  const trend = data?.status?.trend || [];
+  const total = sumField(trend, "completed") + sumField(trend, "cancelled") + sumField(trend, "no_show");
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <SmallKPI label="Total" value={total} icon={Calendar} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Completed" value={sumField(trend, "completed")} icon={UserCheck} iconBg="bg-green-50" iconColor="text-green-600" />
+        <SmallKPI label="Cancelled" value={sumField(trend, "cancelled")} icon={AlertCircle} iconBg="bg-red-50" iconColor="text-red-500" />
+        <SmallKPI label="No-show" value={sumField(trend, "no_show")} icon={Users} iconBg="bg-gray-50" iconColor="text-gray-500" />
+        <SmallKPI label="Forecast Risk" value={Math.round(sumField(trend, "forecast_cancelled") + sumField(trend, "forecast_no_show"))} icon={TrendingUp} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Status Trend (Actual + Forecast Risk)</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={trend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+              <Line type="monotone" dataKey="completed" stroke={GREEN} name="Completed" />
+              <Line type="monotone" dataKey="cancelled" stroke={RED} name="Cancelled" />
+              <Line type="monotone" dataKey="no_show" stroke={GRAY} name="No Show" />
+              <Line type="monotone" dataKey="forecast_cancelled" stroke={ORANGE} strokeDasharray="6 4" name="Forecast Cancelled" />
+              <Line type="monotone" dataKey="forecast_no_show" stroke={PURPLE} strokeDasharray="6 4" name="Forecast No Show" />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DoctorPanel({ data }) {
+  const rows = data?.doctor?.workload || [];
+  const total = sumField(rows, "actual");
+  const ratedDoctors = rows.filter((r) => Number(r.rating_count || 0) > 0);
+  const weightedRating = ratedDoctors.reduce((acc, r) => acc + (Number(r.avg_rating || 0) * Number(r.rating_count || 0)), 0);
+  const totalRatings = ratedDoctors.reduce((acc, r) => acc + Number(r.rating_count || 0), 0);
+  const overallRating = totalRatings > 0 ? (weightedRating / totalRatings).toFixed(2) : "0.00";
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SmallKPI label="Total Doctors" value={rows.length} icon={Users} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Actual Workload" value={total} icon={Calendar} iconBg="bg-teal-50" iconColor="text-teal-600" />
+        <SmallKPI label="Predicted Load" value={Math.round(sumField(rows, "forecast"))} icon={TrendingUp} iconBg="bg-orange-50" iconColor="text-orange-600" />
+        <SmallKPI label="Patient Rating" value={`${overallRating}/5`} sub={`${totalRatings} ratings`} icon={Activity} iconBg="bg-purple-50" iconColor="text-purple-600" />
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Doctor Workload (Actual vs Predicted)</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={rows}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+              <XAxis dataKey="doctor" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+              <Bar dataKey="actual" fill={BLUE} radius={[4, 4, 0, 0]} name="Actual Patients" />
+              <Bar dataKey="forecast" fill={ORANGE} radius={[4, 4, 0, 0]} name="Forecast Workload" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <div className="overflow-x-auto rounded-xl border border-gray-100">
+        <table className="w-full">
+          <thead><tr><Th>Doctor</Th><Th>Actual Patients</Th><Th>Forecast Workload</Th><Th>Avg Patient Rating</Th><Th>Ratings Count</Th></tr></thead>
+          <tbody className="divide-y divide-gray-50">
+            {rows.map((r) => (
+              <tr key={r.doctor} className="hover:bg-gray-50">
+                <Td className="font-semibold text-gray-900">{r.doctor}</Td>
+                <Td className="font-bold text-gray-800">{Math.round(r.actual || 0)}</Td>
+                <Td className="text-gray-600">{Math.round(r.forecast || 0)}</Td>
+                <Td className="text-yellow-600 font-semibold">{Number(r.avg_rating || 0).toFixed(2)} / 5</Td>
+                <Td><span className="text-gray-600">{r.rating_count || 0}</span></Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PatientPanel({ data }) {
+  const trend = data?.patient?.trend || [];
+  const mix = data?.patient?.mix || [];
+  const tableRows = data?.patient?.table || [];
+
+  const walkinTotal = sumField(trend, "walkin");
+  const appointmentTotal = sumField(trend, "appointment");
+
+  const pieRows = mix.map((m, i) => ({ ...m, fill: i === 0 ? YELLOW : BLUE }));
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SmallKPI label="Total Visits" value={walkinTotal + appointmentTotal} icon={Users} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Walk-in Patients" value={walkinTotal} icon={Activity} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
+        <SmallKPI label="Appointment Patients" value={appointmentTotal} icon={Calendar} iconBg="bg-indigo-50" iconColor="text-indigo-600" />
+        <SmallKPI label="Forecast Visits" value={Math.round(sumField(trend, "forecast_walkin") + sumField(trend, "forecast_appointment"))} icon={TrendingUp} iconBg="bg-teal-50" iconColor="text-teal-600" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader><CardTitle className="text-base">Patient Type Distribution</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Visit Type Distribution</CardTitle></CardHeader>
           <CardContent>
             <div className="flex items-center gap-6">
-              <ResponsiveContainer width="55%" height={200}>
+              <ResponsiveContainer width="55%" height={190}>
                 <PieChart>
-                  <Pie data={ptypes} cx="50%" cy="50%" outerRadius={90} dataKey="value" labelLine={false} label={<PieLabel />}>
-                    {ptypes.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  <Pie data={pieRows} cx="50%" cy="50%" outerRadius={85} dataKey="value" labelLine={false} label={<PieLabel />}>
+                    {pieRows.map((e, i) => <Cell key={i} fill={e.fill} />)}
                   </Pie>
                   <Tooltip formatter={(v, n) => [v, n]} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex flex-col gap-3">
-                {ptypes.map(d => (
+                {pieRows.map((d) => (
                   <div key={d.name} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: d.fill }} />
+                    <div className="w-3 h-3 rounded-full" style={{ background: d.fill }} />
                     <div>
                       <p className="text-xs font-semibold text-gray-700">{d.name}</p>
-                      <p className="text-xs text-gray-400">{d.value} patients</p>
+                      <p className="text-xs text-gray-400">{d.value} visits</p>
                     </div>
                   </div>
                 ))}
@@ -486,59 +437,38 @@ function OverviewSection({ dateRange }) {
             </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader><CardTitle className="text-base">Monthly Growth (Last 6 Months)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Visit Trend (Actual vs Forecast)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={MONTHLY_GROWTH} margin={{ top: 4, right: 20, left: -10, bottom: 0 }}>
+            <ResponsiveContainer width="100%" height={190}>
+              <LineChart data={trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip content={<ChartTooltip />} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="patients"     stroke={TEAL} strokeWidth={2.5} dot={{ r: 3 }} name="Patients" />
-                <Line type="monotone" dataKey="appointments" stroke={BLUE} strokeWidth={2.5} dot={{ r: 3 }} name="Appointments" />
+                <Legend iconType="circle" iconSize={8} />
+                <Line type="monotone" dataKey="walkin" stroke={YELLOW} name="Walk-in Actual" />
+                <Line type="monotone" dataKey="appointment" stroke={BLUE} name="Appointment Actual" />
+                <Line type="monotone" dataKey="forecast_walkin" stroke={ORANGE} strokeDasharray="6 4" name="Walk-in Forecast" />
+                <Line type="monotone" dataKey="forecast_appointment" stroke={TEAL} strokeDasharray="6 4" name="Appointment Forecast" />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
-}
 
-/* ════════════════════════════════════════════
-   REPORT CONTENT PANELS
-════════════════════════════════════════════ */
-function DailyPanel({ doctorFilter, statusFilter }) {
-  const rows = DAILY_DATA.filter(r => {
-    const d = doctorFilter === "All Doctors" || r.doctor === doctorFilter;
-    const s = statusFilter === "All Status"  || r.status === statusFilter.toLowerCase().replace("-", "_");
-    return d && s;
-  });
-  const completed = rows.filter(r => r.status === "completed").length;
-  const pending   = rows.filter(r => ["scheduled","ongoing"].includes(r.status)).length;
-  const cancelled = rows.filter(r => r.status === "cancelled").length;
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SmallKPI label="Total"     value={rows.length} icon={Calendar}    iconBg="bg-blue-50"   iconColor="text-blue-600"   />
-        <SmallKPI label="Completed" value={completed}   icon={UserCheck}   iconBg="bg-green-50"  iconColor="text-green-600"  />
-        <SmallKPI label="Pending"   value={pending}     icon={Clock}       iconBg="bg-yellow-50" iconColor="text-yellow-600" />
-        <SmallKPI label="Cancelled" value={cancelled}   icon={AlertCircle} iconBg="bg-red-50"    iconColor="text-red-500"    />
-      </div>
       <div className="overflow-x-auto rounded-xl border border-gray-100">
         <table className="w-full">
-          <thead><tr><Th>Time</Th><Th>Patient</Th><Th>Doctor</Th><Th className="hidden md:table-cell">Reason</Th><Th>Status</Th></tr></thead>
+          <thead><tr><Th>Patient</Th><Th>Total Visits</Th><Th>Walk-in Patients</Th><Th>Appointment Patients</Th><Th>Last Visit</Th></tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {rows.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-gray-400 text-sm">No appointments match the selected filters.</td></tr>}
-            {rows.map(r => (
-              <tr key={r.id} className="hover:bg-gray-50 transition-colors">
-                <Td className="font-medium text-gray-700 whitespace-nowrap">{r.time}</Td>
-                <Td className="font-semibold text-gray-900">{r.patient}</Td>
-                <Td className="text-gray-500">{r.doctor}</Td>
-                <Td className="text-gray-400 hidden md:table-cell">{r.reason}</Td>
-                <Td><StatusBadge status={r.status} /></Td>
+            {tableRows.map((r) => (
+              <tr key={r.patient_id} className="hover:bg-gray-50">
+                <Td className="font-semibold text-gray-900">{r.patient_name}</Td>
+                <Td className="font-bold text-gray-800">{r.total_visits}</Td>
+                <Td><span className="text-yellow-600 font-semibold">{r.walkin}</span></Td>
+                <Td><span className="text-blue-600 font-semibold">{r.appointment}</span></Td>
+                <Td className="text-gray-500">{r.last_visit || "—"}</Td>
               </tr>
             ))}
           </tbody>
@@ -548,511 +478,272 @@ function DailyPanel({ doctorFilter, statusFilter }) {
   );
 }
 
-function StatusPanel() {
-  const total = STATUS_CHART.reduce((s, d) => s + d.value, 0);
-  const comp  = STATUS_CHART.find(d => d.name === "Completed")?.value || 0;
-  const canc  = STATUS_CHART.find(d => d.name === "Cancelled")?.value || 0;
-  const noshow= STATUS_CHART.find(d => d.name === "No-show")?.value   || 0;
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <SmallKPI label="Total"           value={total}                       icon={Calendar}   iconBg="bg-blue-50"  iconColor="text-blue-600"  />
-        <SmallKPI label="Completed"       value={comp}                        icon={UserCheck}  iconBg="bg-green-50" iconColor="text-green-600"  trend={8}  />
-        <SmallKPI label="Cancelled"       value={canc}                        icon={AlertCircle}iconBg="bg-red-50"   iconColor="text-red-500"    trend={-5} />
-        <SmallKPI label="No-show"         value={noshow}                      icon={Users}      iconBg="bg-gray-50"  iconColor="text-gray-500"   />
-        <SmallKPI label="Completion Rate" value={`${((comp/total)*100).toFixed(1)}%`} icon={TrendingUp} iconBg="bg-teal-50" iconColor="text-teal-600" trend={3} />
-      </div>
-      <Card>
-        <CardHeader><CardTitle className="text-sm">Status Breakdown</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={STATUS_CHART} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} />
-              <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="value" radius={[6,6,0,0]} name="Count">
-                {STATUS_CHART.map((e,i) => <Cell key={i} fill={e.fill} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>Status</Th><Th>Count</Th><Th>%</Th><Th>Visual</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {STATUS_CHART.map(r => (
-              <tr key={r.name} className="hover:bg-gray-50">
-                <Td><StatusBadge status={r.name.toLowerCase().replace("-","_")} /></Td>
-                <Td className="font-bold text-gray-900">{r.value}</Td>
-                <Td className="text-gray-500">{((r.value/total)*100).toFixed(1)}%</Td>
-                <Td><div className="w-40 bg-gray-100 rounded-full h-2"><div className="h-2 rounded-full" style={{ width:`${(r.value/total)*100}%`, background:r.fill }} /></div></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function DoctorPanel({ doctorFilter }) {
-  const rows    = DOCTOR_DATA.filter(r => doctorFilter === "All Doctors" || r.doctor === doctorFilter);
-  const top     = [...DOCTOR_DATA].sort((a,b) => b.completed - a.completed)[0];
-  const most    = [...DOCTOR_DATA].sort((a,b) => b.total - a.total)[0];
-  const chartD  = DOCTOR_DATA.map(d => ({ name: d.doctor.replace("Dr. ",""), completed: d.completed, cancelled: d.cancelled }));
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SmallKPI label="Total Doctors" value={DOCTOR_DATA.length} icon={Users}     iconBg="bg-blue-50"   iconColor="text-blue-600"   />
-        <SmallKPI label="Total Appts"   value={DOCTOR_DATA.reduce((s,d)=>s+d.total,0)} icon={Calendar} iconBg="bg-teal-50" iconColor="text-teal-600" />
-        <SmallKPI label="Top Performer" value={top.doctor.replace("Dr. ","")} sub="by completions" icon={Star}     iconBg="bg-yellow-50" iconColor="text-yellow-500" />
-        <SmallKPI label="Most Booked"   value={most.doctor.replace("Dr. ","")} sub={`${most.total} appts`} icon={Activity} iconBg="bg-purple-50" iconColor="text-purple-600" />
-      </div>
-      <Card>
-        <CardHeader><CardTitle className="text-sm">Completed vs Cancelled per Doctor</CardTitle></CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartD} margin={{ top: 4, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 11 }} />
-              <Tooltip content={<ChartTooltip />} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="completed" fill={GREEN} radius={[4,4,0,0]} name="Completed" />
-              <Bar dataKey="cancelled" fill={RED}   radius={[4,4,0,0]} name="Cancelled" />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>Doctor</Th><Th>Specialty</Th><Th>Total</Th><Th>Completed</Th><Th>Cancelled</Th><Th>No-show</Th><Th>Avg/Day</Th><Th>Rating</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.map(r => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <Td className="font-semibold text-gray-900">{r.doctor}</Td>
-                <Td className="text-gray-500 text-xs">{r.specialty}</Td>
-                <Td className="font-bold text-gray-800">{r.total}</Td>
-                <Td><span className="text-green-600 font-semibold">{r.completed}</span></Td>
-                <Td><span className="text-red-500 font-semibold">{r.cancelled}</span></Td>
-                <Td><span className="text-gray-500">{r.noshow}</span></Td>
-                <Td className="text-gray-600">{r.avgPerDay}</Td>
-                <Td><div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" /><span className="font-semibold text-gray-700 text-xs">{r.rating}</span></div></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function PatientPanel() {
-  const vip     = PATIENT_DATA.filter(p => p.type === "VIP").length;
-  const chronic = PATIENT_DATA.filter(p => p.type === "Chronic").length;
-  const fu      = PATIENT_DATA.filter(p => p.followup === "Yes").length;
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SmallKPI label="Total Patients"   value={PATIENT_DATA.length} icon={Users}     iconBg="bg-blue-50"   iconColor="text-blue-600"   />
-        <SmallKPI label="VIP Patients"     value={vip}                 icon={Star}      iconBg="bg-purple-50" iconColor="text-purple-600" />
-        <SmallKPI label="Chronic Patients" value={chronic}             icon={Activity}  iconBg="bg-orange-50" iconColor="text-orange-600" />
-        <SmallKPI label="Follow-up Needed" value={fu}                  icon={RefreshCw} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
-      </div>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>Patient</Th><Th>Total Visits</Th><Th>Last Visit</Th><Th>Type</Th><Th>Follow-up</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {PATIENT_DATA.map(r => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <Td className="font-semibold text-gray-900">{r.patient}</Td>
-                <Td className="font-bold text-gray-800">{r.visits}</Td>
-                <Td className="text-gray-500">{r.lastVisit}</Td>
-                <Td><PatientTypeBadge type={r.type} /></Td>
-                <Td><span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${r.followup==="Yes"?"bg-red-100 text-red-600":"bg-green-100 text-green-600"}`}>{r.followup}</span></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function FollowUpPanel({ followupFilter }) {
-  const rows    = followupFilter === "All" ? FOLLOWUP_DATA : FOLLOWUP_DATA.filter(f => f.status === followupFilter.toLowerCase());
-  const overdue = FOLLOWUP_DATA.filter(f => f.status === "overdue").length;
-  const upcoming= FOLLOWUP_DATA.filter(f => f.status === "upcoming").length;
+function FollowUpPanel({ data }) {
+  const trend = data?.followup?.trend || [];
+  const overdue = sumField(trend, "overdue");
+  const upcoming = sumField(trend, "upcoming");
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <SmallKPI label="Total Follow-ups"  value={FOLLOWUP_DATA.length} icon={RefreshCw}   iconBg="bg-blue-50"   iconColor="text-blue-600"   />
-        <SmallKPI label="Overdue"           value={overdue}              icon={AlertCircle} iconBg="bg-red-50"    iconColor="text-red-500"    />
-        <SmallKPI label="Upcoming (7 days)" value={upcoming}             icon={Calendar}    iconBg="bg-yellow-50" iconColor="text-yellow-600" />
-      </div>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>Patient</Th><Th>Last Visit</Th><Th>Follow-up Date</Th><Th className="hidden md:table-cell">Contact</Th><Th>Doctor</Th><Th>Status</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.map(r => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <Td className="font-semibold text-gray-900">{r.patient}</Td>
-                <Td className="text-gray-500">{r.lastVisit}</Td>
-                <Td className="font-medium text-gray-700">{r.followupDate}</Td>
-                <Td className="text-gray-500 hidden md:table-cell">{r.contact}</Td>
-                <Td className="text-gray-500">{r.doctor}</Td>
-                <Td><StatusBadge status={r.status} /></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function EngagementPanel() {
-  const latest   = GROWTH_DATA[GROWTH_DATA.length - 1];
-  const prev     = GROWTH_DATA[GROWTH_DATA.length - 2];
-  const peakDay  = PEAK_DAYS.reduce((a,b) => a.patients > b.patients ? a : b);
-  const peakHour = PEAK_HOURS.reduce((a,b) => a.count > b.count ? a : b);
-  const ret      = Math.round((latest.returning / (latest.newPatients + latest.returning)) * 100);
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SmallKPI label="New This Month" value={latest.newPatients} icon={UserCheck}   iconBg="bg-blue-50"   iconColor="text-blue-600"   trend={Math.round(((latest.newPatients-prev.newPatients)/prev.newPatients)*100)} />
-        <SmallKPI label="Returning %"    value={`${ret}%`}          icon={RefreshCw}   iconBg="bg-teal-50"   iconColor="text-teal-600"   />
-        <SmallKPI label="Inactive"       value={latest.inactive}    icon={AlertCircle} iconBg="bg-gray-50"   iconColor="text-gray-500"   />
-        <SmallKPI label="Peak Day"       value={peakDay.day}        sub={`${peakDay.patients} patients`} icon={TrendingUp} iconBg="bg-purple-50" iconColor="text-purple-600" />
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Monthly Patient Growth</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={190}>
-              <LineChart data={GROWTH_DATA} margin={{ top:4, right:20, left:-10, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="month" tick={{ fontSize:11 }} /><YAxis tick={{ fontSize:11 }} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize:11 }} />
-                <Line type="monotone" dataKey="newPatients" stroke={BLUE} strokeWidth={2.5} dot={{ r:3 }} name="New" />
-                <Line type="monotone" dataKey="returning"   stroke={TEAL} strokeWidth={2.5} dot={{ r:3 }} name="Returning" />
-                <Line type="monotone" dataKey="inactive"    stroke={GRAY} strokeWidth={2}   dot={{ r:3 }} strokeDasharray="4 2" name="Inactive" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Peak Visit Days</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={190}>
-              <BarChart data={PEAK_DAYS} margin={{ top:4, right:10, left:-20, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize:11 }} /><YAxis tick={{ fontSize:11 }} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="patients" radius={[6,6,0,0]} name="Patients">
-                  {PEAK_DAYS.map((e,i) => <Cell key={i} fill={e.day===peakDay.day?PURPLE:"#C4B5FD"} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Appointments This Week</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={190}>
-              <BarChart data={WEEKLY_APPTS} margin={{ top:4, right:10, left:-20, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize:11 }} /><YAxis tick={{ fontSize:11 }} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize:11 }} />
-                <Bar dataKey="appointment" fill={BLUE}   radius={[4,4,0,0]} name="Appointment" />
-                <Bar dataKey="walkIn"      fill={ORANGE} radius={[4,4,0,0]} name="Walk-in" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Peak Hours</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={190}>
-              <BarChart data={PEAK_HOURS} margin={{ top:4, right:10, left:-20, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                <XAxis dataKey="hour" tick={{ fontSize:10 }} /><YAxis tick={{ fontSize:11 }} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="count" radius={[6,6,0,0]} name="Patients">
-                  {PEAK_HOURS.map((e,i) => <Cell key={i} fill={e.hour===peakHour.hour?BLUE:"#93C5FD"} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>Month</Th><Th>New Patients</Th><Th>Returning</Th><Th>Inactive</Th><Th>Total</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {GROWTH_DATA.map(r => (
-              <tr key={r.month} className="hover:bg-gray-50">
-                <Td className="font-semibold text-gray-700">{r.month}</Td>
-                <Td><span className="text-blue-600 font-semibold">{r.newPatients}</span></Td>
-                <Td><span className="text-teal-600 font-semibold">{r.returning}</span></Td>
-                <Td><span className="text-gray-500">{r.inactive}</span></Td>
-                <Td className="font-bold text-gray-800">{r.newPatients + r.returning}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function QueuePanel() {
-  const total = QUEUE_DATA.reduce((s,d) => s+d.served, 0);
-  const peak  = QUEUE_DATA.reduce((a,b) => a.served > b.served ? a : b);
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SmallKPI label="Total Served"  value={total}      icon={Users}       iconBg="bg-blue-50"   iconColor="text-blue-600"   />
-        <SmallKPI label="Avg Wait Time" value="9 min"      icon={Clock}       iconBg="bg-yellow-50" iconColor="text-yellow-600" />
-        <SmallKPI label="Longest Wait"  value="22 min"     icon={AlertCircle} iconBg="bg-red-50"    iconColor="text-red-500"    />
-        <SmallKPI label="Peak Hour"     value={peak.hour}  sub={`${peak.served} served`} icon={TrendingUp} iconBg="bg-purple-50" iconColor="text-purple-600" />
+        <SmallKPI label="Total Follow-ups" value={overdue + upcoming} icon={RefreshCw} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Overdue" value={overdue} icon={AlertCircle} iconBg="bg-red-50" iconColor="text-red-500" />
+        <SmallKPI label="Upcoming" value={upcoming} icon={Calendar} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
       </div>
       <Card>
-        <CardHeader><CardTitle className="text-sm">Patients Served per Hour</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm">Follow-up Demand Trend (Actual vs Forecast)</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={QUEUE_DATA} margin={{ top:4, right:10, left:-20, bottom:0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-              <XAxis dataKey="hour" tick={{ fontSize:10 }} /><YAxis tick={{ fontSize:11 }} />
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={trend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
               <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="served" radius={[6,6,0,0]} name="Patients Served">
-                {QUEUE_DATA.map((e,i) => <Cell key={i} fill={e.served===peak.served?BLUE:"#93C5FD"} />)}
-              </Bar>
-            </BarChart>
+              <Legend iconType="circle" iconSize={8} />
+              <Line type="monotone" dataKey="overdue" stroke={RED} name="Overdue Actual" />
+              <Line type="monotone" dataKey="upcoming" stroke={BLUE} name="Upcoming Actual" />
+              <Line type="monotone" dataKey="forecast_overdue" stroke={ORANGE} strokeDasharray="6 4" name="Overdue Forecast" />
+              <Line type="monotone" dataKey="forecast_upcoming" stroke={TEAL} strokeDasharray="6 4" name="Upcoming Forecast" />
+            </LineChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>Hour</Th><Th>Patients Served</Th><Th>Avg Wait Time</Th><Th>Longest Wait</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {QUEUE_DATA.map(r => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <Td className="font-semibold text-gray-700">{r.hour}</Td>
-                <Td>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-900">{r.served}</span>
-                    <div className="w-16 bg-gray-100 rounded-full h-1.5"><div className="h-1.5 rounded-full bg-blue-500" style={{ width:`${(r.served/peak.served)*100}%` }} /></div>
-                  </div>
-                </Td>
-                <Td className="text-gray-600">{r.avgWait}</Td>
-                <Td className="text-gray-500">{r.longest}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
 
-function SalesPanel() {
-  const peak = [...SALES_BY_SERVICE].sort((a,b) => b.amount - a.amount)[0];
+function EngagementPanel({ data }) {
+  const trend = data?.engagement?.trend || [];
+  const latest = trend[trend.length - 1] || {};
+  const retention = latest.new_patients + latest.returning_patients > 0
+    ? Math.round((latest.returning_patients / (latest.new_patients + latest.returning_patients)) * 100)
+    : 0;
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SmallKPI label="Total Revenue"   value="₱241,500" sub="this month"    icon={DollarSign}   iconBg="bg-green-50"  iconColor="text-green-600"  trend={21} />
-        <SmallKPI label="Transactions"    value={261}       sub="paid consults" icon={ReceiptText}  iconBg="bg-blue-50"   iconColor="text-blue-600"   trend={18} />
-        <SmallKPI label="Avg per Patient" value="₱925"      sub="consult fee"   icon={BadgePercent} iconBg="bg-purple-50" iconColor="text-purple-600" trend={8}  />
-        <SmallKPI label="Outstanding"     value="₱28,400"   sub="unpaid"        icon={CreditCard}   iconBg="bg-orange-50" iconColor="text-orange-500" trend={-15} />
+        <SmallKPI label="New Patients" value={sumField(trend, "new_patients")} icon={UserCheck} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Returning Patients" value={sumField(trend, "returning_patients")} icon={RefreshCw} iconBg="bg-teal-50" iconColor="text-teal-600" />
+        <SmallKPI label="Retention %" value={`${retention}%`} icon={TrendingUp} iconBg="bg-purple-50" iconColor="text-purple-600" />
+        <SmallKPI label="Forecast Growth" value={Math.round(sumField(trend, "forecast_new_patients") + sumField(trend, "forecast_returning_patients"))} icon={Activity} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
       </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Patient Growth & Retention (Actual vs Forecast)</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={230}>
+            <LineChart data={trend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+              <Line type="monotone" dataKey="new_patients" stroke={BLUE} name="New Actual" />
+              <Line type="monotone" dataKey="returning_patients" stroke={TEAL} name="Returning Actual" />
+              <Line type="monotone" dataKey="forecast_new_patients" stroke={ORANGE} strokeDasharray="6 4" name="New Forecast" />
+              <Line type="monotone" dataKey="forecast_returning_patients" stroke={PURPLE} strokeDasharray="6 4" name="Returning Forecast" />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function QueuePanel({ data }) {
+  const trend = data?.queue?.trend || [];
+  const total = sumField(trend, "served");
+  const avgWait = trend.length ? (sumField(trend, "avg_wait") / trend.length).toFixed(2) : "0.00";
+  const forecastWait = trend.length ? (sumField(trend, "forecast_wait") / trend.length).toFixed(2) : "0.00";
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SmallKPI label="Total Served" value={total} icon={Users} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Avg Wait Time" value={`${avgWait} min`} icon={Clock} iconBg="bg-yellow-50" iconColor="text-yellow-600" />
+        <SmallKPI label="Forecast Wait" value={`${forecastWait} min`} icon={TrendingUp} iconBg="bg-orange-50" iconColor="text-orange-600" />
+        <SmallKPI label="Forecast Served" value={Math.round(sumField(trend, "forecast_served"))} icon={Activity} iconBg="bg-purple-50" iconColor="text-purple-600" />
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Queue Volume and Wait Time (Actual vs Forecast)</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={230}>
+            <LineChart data={trend}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip />} />
+              <Legend iconType="circle" iconSize={8} />
+              <Line yAxisId="left" type="monotone" dataKey="served" stroke={BLUE} name="Served Actual" />
+              <Line yAxisId="left" type="monotone" dataKey="forecast_served" stroke={ORANGE} strokeDasharray="6 4" name="Served Forecast" />
+              <Line yAxisId="right" type="monotone" dataKey="avg_wait" stroke={RED} name="Avg Wait Actual" />
+              <Line yAxisId="right" type="monotone" dataKey="forecast_wait" stroke={PURPLE} strokeDasharray="6 4" name="Avg Wait Forecast" />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SalesPanel({ data }) {
+  const trend = data?.sales?.trend || [];
+  const demand = data?.sales?.service_demand || [];
+  const totalRevenue = sumField(trend, "revenue");
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SmallKPI label="Total Revenue" value={`₱${Math.round(totalRevenue).toLocaleString()}`} sub="actual" icon={DollarSign} iconBg="bg-green-50" iconColor="text-green-600" />
+        <SmallKPI label="Forecast Revenue" value={`₱${Math.round(sumField(trend, "forecast_revenue")).toLocaleString()}`} sub="predicted" icon={TrendingUp} iconBg="bg-blue-50" iconColor="text-blue-600" />
+        <SmallKPI label="Service Demand" value={Math.round(sumField(demand, "actual"))} sub="actual qty" icon={ReceiptText} iconBg="bg-purple-50" iconColor="text-purple-600" />
+        <SmallKPI label="Demand Forecast" value={Math.round(sumField(demand, "forecast"))} sub="predicted qty" icon={BadgePercent} iconBg="bg-orange-50" iconColor="text-orange-500" />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader><CardTitle className="text-sm">Weekly Revenue Trend</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">Revenue Trend (Actual vs Forecast)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={SALES_TREND} margin={{ top:4, right:10, left:-10, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                <XAxis dataKey="week" tick={{ fontSize:11 }} />
-                <YAxis tick={{ fontSize:11 }} tickFormatter={v=>`₱${(v/1000).toFixed(0)}k`} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="revenue" fill={GREEN} radius={[6,6,0,0]} name="Revenue (₱)" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Revenue by Service Type</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={SALES_BY_SERVICE} layout="vertical" margin={{ top:4, right:20, left:10, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize:11 }} tickFormatter={v=>`₱${(v/1000).toFixed(0)}k`} />
-                <YAxis dataKey="service" type="category" tick={{ fontSize:10 }} width={120} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="amount" radius={[0,6,6,0]} name="Amount (₱)">
-                  {SALES_BY_SERVICE.map((e,i) => <Cell key={i} fill={e.service===peak.service?TEAL:"#99F6E4"} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Payment Method Breakdown</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-6">
-              <ResponsiveContainer width="55%" height={190}>
-                <PieChart>
-                  <Pie data={PAYMENT_DATA} cx="50%" cy="50%" outerRadius={85} dataKey="value" labelLine={false} label={<PieLabel />}>
-                    {PAYMENT_DATA.map((e,i) => <Cell key={i} fill={e.fill} />)}
-                  </Pie>
-                  <Tooltip formatter={(v,n)=>[v,n]} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex flex-col gap-3">
-                {PAYMENT_DATA.map(d => (
-                  <div key={d.name} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background:d.fill }} />
-                    <div>
-                      <p className="text-xs font-semibold text-gray-700">{d.name}</p>
-                      <p className="text-xs text-gray-400">{d.value} transactions</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Monthly Revenue vs Target</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={190}>
-              <LineChart data={MONTHLY_REVENUE} margin={{ top:4, right:20, left:-10, bottom:0 }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="month" tick={{ fontSize:11 }} />
-                <YAxis tick={{ fontSize:11 }} tickFormatter={v=>`₱${(v/1000).toFixed(0)}k`} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000)}k`} />
                 <Tooltip content={<ChartTooltip />} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize:11 }} />
-                <Line type="monotone" dataKey="revenue" stroke={GREEN}  strokeWidth={2.5} dot={{ r:3 }} name="Actual Revenue" />
-                <Line type="monotone" dataKey="target"  stroke={ORANGE} strokeWidth={2}   dot={{ r:3 }} strokeDasharray="5 3" name="Target" />
+                <Legend iconType="circle" iconSize={8} />
+                <Line type="monotone" dataKey="revenue" stroke={GREEN} strokeWidth={2.5} name="Actual Revenue" />
+                <Line type="monotone" dataKey="forecast_revenue" stroke={ORANGE} strokeWidth={2} strokeDasharray="6 4" name="Forecast Revenue" />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
-      </div>
-      <div className="overflow-x-auto rounded-xl border border-gray-100">
-        <table className="w-full">
-          <thead><tr><Th>#</Th><Th>Date</Th><Th>Patient</Th><Th>Service</Th><Th>Amount</Th><Th>Payment Method</Th><Th>Status</Th></tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {SALES_TXN.map(r => (
-              <tr key={r.id} className="hover:bg-gray-50">
-                <Td className="font-mono text-xs text-gray-400">{r.id}</Td>
-                <Td className="text-gray-500">{r.date}</Td>
-                <Td className="font-semibold text-gray-900">{r.patient}</Td>
-                <Td className="text-gray-600">{r.service}</Td>
-                <Td className="font-bold text-gray-800">{r.amount}</Td>
-                <Td><span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-600">{r.method}</span></Td>
-                <Td><StatusBadge status={r.status} /></Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Service Demand (Actual vs Forecast)</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={demand}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                <XAxis dataKey="service" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip content={<ChartTooltip />} />
+                <Legend iconType="circle" iconSize={8} />
+                <Bar dataKey="actual" fill={TEAL} radius={[4, 4, 0, 0]} name="Actual Demand" />
+                <Bar dataKey="forecast" fill={ORANGE} radius={[4, 4, 0, 0]} name="Forecast Demand" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════
-   MAIN PAGE
-════════════════════════════════════════════ */
 export default function AdminDashboardReport() {
-  const [activeView,     setActiveView]     = useState("overview");
-  const [dateRange,      setDateRange]      = useState("week");
-  const [dateFrom,       setDateFrom]       = useState("2026-03-01");
-  const [dateTo,         setDateTo]         = useState("2026-03-05");
-  const [doctorFilter,   setDoctorFilter]   = useState("All Doctors");
-  const [statusFilter,   setStatusFilter]   = useState("All Status");
-  const [followupFilter, setFollowupFilter] = useState("All");
+  const location = useLocation();
+  const [range, setRange] = useState("monthly");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [data, setData] = useState(null);
 
-  const active      = VIEWS.find(v => v.key === activeView);
-  const isOverview  = activeView === "overview";
-  const isReport    = !isOverview;
+  const activeView = useMemo(() => {
+    const hashKey = (location.hash || "").replace("#", "");
+    return VIEWS.some((v) => v.key === hashKey) ? hashKey : "overview";
+  }, [location.hash]);
+
+  const active = VIEWS.find((v) => v.key === activeView);
+  const isOverview = activeView === "overview";
+  const isReport = !isOverview;
+
+  const loadAnalytics = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const payload = await api.manager.getDashboardAnalytics(range);
+      setData(payload);
+    } catch (e) {
+      setError(e?.message || "Failed to load dashboard analytics.");
+    } finally {
+      setLoading(false);
+    }
+  }, [range]);
+
+  useEffect(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
 
   const renderContent = () => {
+    if (loading) {
+      return (
+        <Card>
+          <CardContent className="p-8 text-center text-gray-500">Loading analytics…</CardContent>
+        </Card>
+      );
+    }
+    if (error) {
+      return (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-red-600 font-semibold">{error}</p>
+            <Button className="mt-3" onClick={loadAnalytics}>Retry</Button>
+          </CardContent>
+        </Card>
+      );
+    }
     switch (activeView) {
-      case "overview":   return <OverviewSection dateRange={dateRange} />;
-      case "daily":      return <DailyPanel    doctorFilter={doctorFilter} statusFilter={statusFilter} />;
-      case "status":     return <StatusPanel />;
-      case "doctor":     return <DoctorPanel   doctorFilter={doctorFilter} />;
-      case "patient":    return <PatientPanel />;
-      case "followup":   return <FollowUpPanel followupFilter={followupFilter} />;
-      case "engagement": return <EngagementPanel />;
-      case "queue":      return <QueuePanel />;
-      case "sales":      return <SalesPanel />;
-      default:           return null;
+      case "overview": return <OverviewSection data={data} rangeLabel={RANGE_FILTERS.find((f) => f.key === range)?.label?.toLowerCase()} />;
+      case "daily": return <DailyPanel data={data} />;
+      case "status": return <StatusPanel data={data} />;
+      case "doctor": return <DoctorPanel data={data} />;
+      case "patient": return <PatientPanel data={data} />;
+      case "followup": return <FollowUpPanel data={data} />;
+      case "engagement": return <EngagementPanel data={data} />;
+      case "queue": return <QueuePanel data={data} />;
+      case "sales": return <SalesPanel data={data} />;
+      default: return null;
     }
   };
 
   return (
     <MainLayout
       title={isOverview ? "Dashboard" : "Dashboard & Reports"}
-      subtitle={isOverview ? "Clinic performance overview" : "Generate, analyze and export clinic reports"}
+      subtitle={isOverview ? "Clinic performance with forecast analytics" : "Actual vs forecast analytics by section"}
     >
       <div className="space-y-5">
-
-        {/* ══ TOP CONTROL BAR ══ */}
         <Card>
           <CardContent className="p-4">
             <div className="flex flex-wrap items-end gap-4">
+              <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                <CalendarDays className="w-4 h-4 text-gray-400 ml-2" />
+                {RANGE_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setRange(f.key)}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-150 ${range === f.key ? "bg-white text-blue-600 shadow-sm shadow-blue-100" : "text-gray-500 hover:text-gray-700"}`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
 
-              {/* Date range toggle (Overview) or date pickers (Reports) */}
-              {isOverview ? (
-                <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
-                  <CalendarDays className="w-4 h-4 text-gray-400 ml-2" />
-                  {DATE_FILTERS.map(f => (
-                    <button key={f.key} onClick={() => setDateRange(f.key)}
-                      className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-150
-                        ${dateRange === f.key ? "bg-white text-blue-600 shadow-sm shadow-blue-100" : "text-gray-500 hover:text-gray-700"}`}>
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-              ) : (
+              {isReport && (
                 <>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Date From</label>
-                    <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="text-sm" />
+                    <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="text-sm" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Date To</label>
-                    <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="text-sm" />
+                    <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="text-sm" />
                   </div>
-                  {["daily","doctor"].includes(activeView) && (
-                    <div className="min-w-[180px]">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Doctor</label>
-                      <SelectBox value={doctorFilter} onChange={setDoctorFilter} options={DOCTORS_LIST} />
-                    </div>
-                  )}
-                  {["daily","status"].includes(activeView) && (
-                    <div className="min-w-[160px]">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Status</label>
-                      <SelectBox value={statusFilter} onChange={setStatusFilter} options={STATUSES_LIST} />
-                    </div>
-                  )}
-                  {activeView === "followup" && (
-                    <div className="min-w-[180px]">
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Follow-up Type</label>
-                      <SelectBox value={followupFilter} onChange={setFollowupFilter} options={["All","Overdue","Upcoming"]} />
-                    </div>
-                  )}
+                  <div className="min-w-[180px]">
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Period</label>
+                    <SelectBox value={range} onChange={setRange} options={RANGE_FILTERS.map((f) => ({ value: f.key, label: f.label }))} />
+                  </div>
                 </>
               )}
 
               <div className="flex-1" />
-
-              {/* Export buttons (reports only) */}
               {isReport && (
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="w-3.5 h-3.5 mr-1.5" /> Print</Button>
@@ -1064,45 +755,24 @@ export default function AdminDashboardReport() {
           </CardContent>
         </Card>
 
-        {/* ══ VIEW TABS ══ */}
-        <div className="flex gap-2 flex-wrap">
-          {VIEWS.map(v => {
-            const Icon    = v.icon;
-            const isActive= activeView === v.key;
-            return (
-              <button key={v.key} onClick={() => setActiveView(v.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border
-                  ${isActive
-                    ? `${v.bg} ${v.color} border-current shadow-sm`
-                    : "bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700"}`}>
-                <Icon className="w-3.5 h-3.5" />
-                {v.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ══ CONTENT AREA ══ */}
         {isOverview ? (
           renderContent()
         ) : (
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${active?.bg}`}>
-                  {active && <active.icon className={`w-5 h-5 ${active.color}`} />}
-                </div>
+                <div className={`p-2 rounded-lg ${active?.bg}`}>{active && <active.icon className={`w-5 h-5 ${active.color}`} />}</div>
                 <div>
                   <CardTitle className="text-base">{active?.label} Report</CardTitle>
-                  <p className="text-xs text-gray-400 mt-0.5">{dateFrom} {dateTo !== dateFrom ? `– ${dateTo}` : ""}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{RANGE_FILTERS.find((f) => f.key === range)?.label || "Monthly"} Analytics</p>
                 </div>
               </div>
             </CardHeader>
             <CardContent>{renderContent()}</CardContent>
           </Card>
         )}
-
       </div>
     </MainLayout>
   );
 }
+

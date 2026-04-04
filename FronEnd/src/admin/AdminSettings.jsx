@@ -5,9 +5,9 @@ import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import {
   Building2, Palette, Bell, Shield, Database, Save, RefreshCw,
-  Check, ChevronRight, Sun, Moon, Monitor, Globe, Clock, Phone,
+  Check, ChevronRight, ChevronDown, Sun, Moon, Monitor, Globe, Clock, Phone,
   Mail, MapPin, Upload, Eye, EyeOff, AlertTriangle, Info,
-  HardDrive, Trash2, Download, Loader2,
+  HardDrive, Trash2, Download, Loader2, Menu, X,
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
@@ -56,7 +56,7 @@ const FieldRow = ({ label, hint, children }) => (
 
 const ToggleRow = ({ label, description, checked, onChange, disabled }) => (
   <div className={`flex items-center justify-between py-3 ${disabled ? 'opacity-50' : ''}`}>
-    <div>
+    <div className="pr-4">
       <p className="text-sm font-semibold text-gray-800">{label}</p>
       {description && <p className="text-xs text-gray-400 mt-0.5">{description}</p>}
     </div>
@@ -75,7 +75,6 @@ const SectionHeader = ({ title, description }) => (
 /* ══════════ TABS ══════════ */
 const TABS = [
   { key: 'clinic',        label: 'Clinic Info',   icon: Building2 },
-  { key: 'appearance',    label: 'Appearance',    icon: Palette   },
   { key: 'notifications', label: 'Notifications', icon: Bell      },
   { key: 'security',      label: 'Security',      icon: Shield    },
   { key: 'system',        label: 'System',        icon: Database  },
@@ -98,20 +97,14 @@ const DEFAULT_CLINIC = {
 /* ══════════ MAIN ══════════ */
 export default function SettingsPage() {
   const { toast } = useToast();
-  const [activeTab,  setActiveTab]  = useState('clinic');
-  const [saved,      setSaved]      = useState(false);
-  const [saving,     setSaving]     = useState(false);
+  const [activeTab,     setActiveTab]     = useState('clinic');
+  const [saved,         setSaved]         = useState(false);
+  const [saving,        setSaving]        = useState(false);
   const [loadingClinic, setLoadingClinic] = useState(true);
+  const [sidebarOpen,   setSidebarOpen]   = useState(false); // mobile drawer
 
   /* — Clinic Info — */
   const [clinic, setClinic] = useState(DEFAULT_CLINIC);
-
-  /* — Appearance — */
-  const [appearance, setAppearance] = useState({
-    theme: 'light', primaryColor: 'blue', fontSize: 'medium',
-    language: 'en', timezone: 'Asia/Manila', dateFormat: 'MM/DD/YYYY',
-    timeFormat: '12h', sidebarCollapsed: false, compactMode: false, showAnimations: true,
-  });
 
   /* — Notifications — */
   const [notifs, setNotifs] = useState({
@@ -128,8 +121,8 @@ export default function SettingsPage() {
   });
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showNewPw,     setShowNewPw]     = useState(false);
-  const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
-  const [pwSaving, setPwSaving] = useState(false);
+  const [pwForm,  setPwForm]  = useState({ current: '', newPw: '', confirm: '' });
+  const [pwSaving,setPwSaving]= useState(false);
 
   /* — System — */
   const [system, setSystem] = useState({
@@ -155,11 +148,10 @@ export default function SettingsPage() {
     load();
   }, []);
 
-  const setC   = (k, v) => setClinic(p     => ({ ...p, [k]: v }));
-  const setA   = (k, v) => setAppearance(p => ({ ...p, [k]: v }));
-  const setN   = (k, v) => setNotifs(p     => ({ ...p, [k]: v }));
-  const setS   = (k, v) => setSecurity(p   => ({ ...p, [k]: v }));
-  const setSys = (k, v) => setSystem(p     => ({ ...p, [k]: v }));
+  const setC   = (k, v) => setClinic(p   => ({ ...p, [k]: v }));
+  const setN   = (k, v) => setNotifs(p   => ({ ...p, [k]: v }));
+  const setS   = (k, v) => setSecurity(p => ({ ...p, [k]: v }));
+  const setSys = (k, v) => setSystem(p   => ({ ...p, [k]: v }));
 
   /* ── Save clinic settings ── */
   const handleSave = async () => {
@@ -183,9 +175,9 @@ export default function SettingsPage() {
 
   /* ── Update password ── */
   const handleUpdatePassword = async () => {
-    if (!pwForm.current)               return toast({ title: 'Error', description: 'Enter your current password.', variant: 'destructive' });
-    if (pwForm.newPw.length < 8)       return toast({ title: 'Error', description: 'New password must be at least 8 characters.', variant: 'destructive' });
-    if (pwForm.newPw !== pwForm.confirm) return toast({ title: 'Error', description: 'Passwords do not match.', variant: 'destructive' });
+    if (!pwForm.current)                return toast({ title: 'Error', description: 'Enter your current password.',        variant: 'destructive' });
+    if (pwForm.newPw.length < 8)        return toast({ title: 'Error', description: 'New password must be at least 8 characters.', variant: 'destructive' });
+    if (pwForm.newPw !== pwForm.confirm) return toast({ title: 'Error', description: 'Passwords do not match.',            variant: 'destructive' });
 
     setPwSaving(true);
     try {
@@ -210,21 +202,56 @@ export default function SettingsPage() {
     }
   };
 
+  /* ── Tab switcher (closes mobile drawer) ── */
+  const switchTab = (key) => {
+    setActiveTab(key);
+    setSidebarOpen(false);
+  };
+
+  /* ── Active tab label ── */
+  const activeLabel = TABS.find(t => t.key === activeTab)?.label ?? '';
+
   return (
     <MainLayout title="Settings" subtitle="Manage clinic preferences and system configuration">
-      <div className="flex gap-5 max-w-6xl mx-auto">
 
-        {/* ══ SIDEBAR TABS ══ */}
-        <div className="w-52 flex-shrink-0">
-          <Card className="sticky top-0">
+      {/* ── Mobile overlay ── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <div className="flex gap-5 max-w-6xl mx-auto relative">
+
+        {/* ══ SIDEBAR — desktop always visible, mobile drawer ══ */}
+        <aside
+          className={`
+            fixed top-0 left-0 h-full z-40 bg-white shadow-xl w-64 pt-16 px-3 transition-transform duration-200
+            lg:static lg:h-auto lg:w-52 lg:flex-shrink-0 lg:bg-transparent lg:shadow-none lg:pt-0 lg:px-0 lg:z-auto lg:translate-x-0
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          `}
+        >
+          {/* Close button — mobile only */}
+          <button
+            className="absolute top-4 right-4 lg:hidden text-gray-500 hover:text-gray-800"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          <Card className="lg:sticky lg:top-4">
             <CardContent className="p-2">
               {TABS.map(t => {
                 const Icon = t.icon;
                 const active = activeTab === t.key;
                 return (
-                  <button key={t.key} onClick={() => setActiveTab(t.key)}
+                  <button
+                    key={t.key}
+                    onClick={() => switchTab(t.key)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all mb-0.5
-                      ${active ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'text-gray-600 hover:bg-gray-100'}`}>
+                      ${active ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
                     <Icon className="w-4 h-4 flex-shrink-0" />
                     {t.label}
                   </button>
@@ -232,10 +259,22 @@ export default function SettingsPage() {
               })}
             </CardContent>
           </Card>
-        </div>
+        </aside>
 
         {/* ══ CONTENT ══ */}
         <div className="flex-1 min-w-0 space-y-4">
+
+          {/* Mobile top bar — shows current tab + hamburger */}
+          <div className="flex items-center gap-3 lg:hidden">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 shadow-sm"
+            >
+              <Menu className="w-4 h-4" />
+              {activeLabel}
+              <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+            </button>
+          </div>
 
           {/* ── CLINIC INFO ── */}
           {activeTab === 'clinic' && (
@@ -244,10 +283,11 @@ export default function SettingsPage() {
                 <CardTitle className="text-base flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-blue-600" /> Clinic Information
                 </CardTitle>
-                <p className="text-xs text-gray-400">Basic details that appear on receipts, reports, patient communications, and the landing page.</p>
+                <p className="text-xs text-gray-400">
+                  Basic details that appear on receipts, reports, patient communications, and the landing page.
+                </p>
               </CardHeader>
               <CardContent className="space-y-5">
-
                 {loadingClinic ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="w-6 h-6 text-blue-400 animate-spin mr-2" />
@@ -256,7 +296,7 @@ export default function SettingsPage() {
                 ) : (
                   <>
                     {/* Logo upload */}
-                    <div className="flex items-center gap-4 p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-blue-300 transition-colors">
                       <div className="w-16 h-16 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
                         <Building2 className="w-8 h-8 text-blue-400" />
                       </div>
@@ -270,7 +310,9 @@ export default function SettingsPage() {
                     </div>
 
                     <SectionHeader title="Basic Details" />
-                    <div className="grid grid-cols-2 gap-4">
+
+                    {/* 2-col on sm+, 1-col on mobile */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FieldRow label="Clinic Name">
                         <input value={clinic.name} onChange={e => setC('name', e.target.value)} className={inputCls} />
                       </FieldRow>
@@ -278,10 +320,12 @@ export default function SettingsPage() {
                         <input value={clinic.tagline} onChange={e => setC('tagline', e.target.value)} className={inputCls} />
                       </FieldRow>
                     </div>
+
                     <FieldRow label="Address">
                       <input value={clinic.address} onChange={e => setC('address', e.target.value)} className={inputCls} />
                     </FieldRow>
-                    <div className="grid grid-cols-2 gap-4">
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FieldRow label="Landline">
                         <input value={clinic.phone} onChange={e => setC('phone', e.target.value)} className={inputCls} />
                       </FieldRow>
@@ -297,7 +341,7 @@ export default function SettingsPage() {
                     </div>
 
                     <SectionHeader title="Regulatory Info" />
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FieldRow label="TIN">
                         <input value={clinic.tin} onChange={e => setC('tin', e.target.value)} className={inputCls} />
                       </FieldRow>
@@ -305,6 +349,7 @@ export default function SettingsPage() {
                         <input value={clinic.phic} onChange={e => setC('phic', e.target.value)} className={inputCls} />
                       </FieldRow>
                     </div>
+
                     <FieldRow label="Operating Schedule" hint="This appears on the landing page contact section.">
                       <input value={clinic.schedule} onChange={e => setC('schedule', e.target.value)} className={inputCls} />
                     </FieldRow>
@@ -324,84 +369,6 @@ export default function SettingsPage() {
             </Card>
           )}
 
-          {/* ── APPEARANCE ── */}
-          {activeTab === 'appearance' && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Palette className="w-5 h-5 text-blue-600" /> Appearance & Display
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-
-                <SectionHeader title="Theme" />
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { value: 'light',  label: 'Light',  icon: Sun     },
-                    { value: 'dark',   label: 'Dark',   icon: Moon    },
-                    { value: 'system', label: 'System', icon: Monitor },
-                  ].map(t => {
-                    const Icon = t.icon;
-                    const sel  = appearance.theme === t.value;
-                    return (
-                      <button key={t.value} onClick={() => setA('theme', t.value)}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all
-                          ${sel ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                        <Icon className="w-5 h-5" />
-                        <span className="text-xs font-bold">{t.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <SectionHeader title="Color Accent" />
-                <div className="flex items-center gap-3">
-                  {[
-                    { value: 'blue',   color: 'bg-blue-500'   },
-                    { value: 'teal',   color: 'bg-teal-500'   },
-                    { value: 'indigo', color: 'bg-indigo-500' },
-                    { value: 'violet', color: 'bg-violet-500' },
-                    { value: 'green',  color: 'bg-green-500'  },
-                  ].map(c => (
-                    <button key={c.value} onClick={() => setA('primaryColor', c.value)}
-                      className={`w-9 h-9 rounded-xl ${c.color} transition-all shadow-sm
-                        ${appearance.primaryColor === c.value ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'opacity-60 hover:opacity-100'}`} />
-                  ))}
-                </div>
-
-                <SectionHeader title="Localization" />
-                <div className="grid grid-cols-2 gap-4">
-                  <FieldRow label="Language">
-                    <SelectBox value={appearance.language} onChange={v => setA('language', v)}
-                      options={[{value:'en',label:'English'},{value:'fil',label:'Filipino'},{value:'ceb',label:'Cebuano'}]} />
-                  </FieldRow>
-                  <FieldRow label="Timezone">
-                    <SelectBox value={appearance.timezone} onChange={v => setA('timezone', v)}
-                      options={[{value:'Asia/Manila',label:'Asia/Manila (PHT)'},{value:'UTC',label:'UTC'},{value:'Asia/Singapore',label:'Asia/Singapore (SGT)'}]} />
-                  </FieldRow>
-                  <FieldRow label="Date Format">
-                    <SelectBox value={appearance.dateFormat} onChange={v => setA('dateFormat', v)}
-                      options={[{value:'MM/DD/YYYY',label:'MM/DD/YYYY'},{value:'DD/MM/YYYY',label:'DD/MM/YYYY'},{value:'YYYY-MM-DD',label:'YYYY-MM-DD'}]} />
-                  </FieldRow>
-                  <FieldRow label="Time Format">
-                    <SelectBox value={appearance.timeFormat} onChange={v => setA('timeFormat', v)}
-                      options={[{value:'12h',label:'12-hour (AM/PM)'},{value:'24h',label:'24-hour'}]} />
-                  </FieldRow>
-                </div>
-
-                <SectionHeader title="Layout" />
-                <div className="divide-y divide-gray-50">
-                  <ToggleRow label="Compact Mode" description="Reduce spacing for more content on screen"
-                    checked={appearance.compactMode} onChange={v => setA('compactMode', v)} />
-                  <ToggleRow label="Show Animations" description="Enable transitions and motion effects"
-                    checked={appearance.showAnimations} onChange={v => setA('showAnimations', v)} />
-                  <ToggleRow label="Collapse Sidebar by Default" description="Start with a minimized sidebar"
-                    checked={appearance.sidebarCollapsed} onChange={v => setA('sidebarCollapsed', v)} />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* ── NOTIFICATIONS ── */}
           {activeTab === 'notifications' && (
             <Card>
@@ -411,7 +378,6 @@ export default function SettingsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-
                 <SectionHeader title="Email Notifications" />
                 <div className="divide-y divide-gray-50">
                   <ToggleRow label="Appointment Reminders" description="Send email reminders for upcoming appointments"
@@ -443,10 +409,13 @@ export default function SettingsPage() {
                 </div>
 
                 <SectionHeader title="Reminder Timing" />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FieldRow label="Appointment Reminder (hours before)">
                     <SelectBox value={notifs.reminderHours} onChange={v => setN('reminderHours', v)}
-                      options={[{value:'1',label:'1 hour'},{value:'2',label:'2 hours'},{value:'6',label:'6 hours'},{value:'12',label:'12 hours'},{value:'24',label:'24 hours'},{value:'48',label:'48 hours'}]} />
+                      options={[
+                        {value:'1',label:'1 hour'},{value:'2',label:'2 hours'},{value:'6',label:'6 hours'},
+                        {value:'12',label:'12 hours'},{value:'24',label:'24 hours'},{value:'48',label:'48 hours'},
+                      ]} />
                   </FieldRow>
                 </div>
 
@@ -484,14 +453,21 @@ export default function SettingsPage() {
                   </div>
 
                   <SectionHeader title="Session & Password Policy" />
-                  <div className="grid grid-cols-3 gap-4">
+                  {/* 3-col on md+, 1-col on mobile */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     <FieldRow label="Session Timeout (minutes)">
                       <SelectBox value={security.sessionTimeout} onChange={v => setS('sessionTimeout', v)}
-                        options={[{value:'15',label:'15 min'},{value:'30',label:'30 min'},{value:'60',label:'1 hour'},{value:'120',label:'2 hours'},{value:'0',label:'Never'}]} />
+                        options={[
+                          {value:'15',label:'15 min'},{value:'30',label:'30 min'},{value:'60',label:'1 hour'},
+                          {value:'120',label:'2 hours'},{value:'0',label:'Never'},
+                        ]} />
                     </FieldRow>
                     <FieldRow label="Password Expiry (days)">
                       <SelectBox value={security.passwordExpiry} onChange={v => setS('passwordExpiry', v)}
-                        options={[{value:'30',label:'30 days'},{value:'60',label:'60 days'},{value:'90',label:'90 days'},{value:'180',label:'180 days'},{value:'0',label:'Never'}]} />
+                        options={[
+                          {value:'30',label:'30 days'},{value:'60',label:'60 days'},{value:'90',label:'90 days'},
+                          {value:'180',label:'180 days'},{value:'0',label:'Never'},
+                        ]} />
                     </FieldRow>
                     <FieldRow label="Max Login Attempts">
                       <SelectBox value={security.loginAttempts} onChange={v => setS('loginAttempts', v)}
@@ -501,7 +477,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              {/* Change Password — connected to API */}
+              {/* Change Password */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -509,7 +485,8 @@ export default function SettingsPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
+                  {/* Stacks on mobile, 3-col on md+ */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <FieldRow label="Current Password">
                       <div className="relative">
                         <input type={showCurrentPw ? 'text' : 'password'} value={pwForm.current}
@@ -541,7 +518,9 @@ export default function SettingsPage() {
                   <div className="flex justify-end">
                     <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
                       disabled={pwSaving} onClick={handleUpdatePassword}>
-                      {pwSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</> : 'Update Password'}
+                      {pwSaving
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</>
+                        : 'Update Password'}
                     </Button>
                   </div>
                 </CardContent>
@@ -564,21 +543,32 @@ export default function SettingsPage() {
                     <ToggleRow label="Automatic Backup" description="Regularly back up database and files"
                       checked={system.autoBackup} onChange={v => setSys('autoBackup', v)} />
                   </div>
-                  <div className="grid grid-cols-3 gap-4 pt-2">
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
                     <FieldRow label="Backup Frequency">
                       <SelectBox value={system.backupFrequency} onChange={v => setSys('backupFrequency', v)}
-                        options={[{value:'hourly',label:'Hourly'},{value:'daily',label:'Daily'},{value:'weekly',label:'Weekly'},{value:'monthly',label:'Monthly'}]} />
+                        options={[
+                          {value:'hourly',label:'Hourly'},{value:'daily',label:'Daily'},
+                          {value:'weekly',label:'Weekly'},{value:'monthly',label:'Monthly'},
+                        ]} />
                     </FieldRow>
                     <FieldRow label="Retention (days)">
                       <SelectBox value={system.backupRetention} onChange={v => setSys('backupRetention', v)}
-                        options={[{value:'7',label:'7 days'},{value:'14',label:'14 days'},{value:'30',label:'30 days'},{value:'90',label:'90 days'}]} />
+                        options={[
+                          {value:'7',label:'7 days'},{value:'14',label:'14 days'},
+                          {value:'30',label:'30 days'},{value:'90',label:'90 days'},
+                        ]} />
                     </FieldRow>
                     <FieldRow label="Max Upload Size (MB)">
                       <SelectBox value={system.maxUploadSize} onChange={v => setSys('maxUploadSize', v)}
-                        options={[{value:'5',label:'5 MB'},{value:'10',label:'10 MB'},{value:'25',label:'25 MB'},{value:'50',label:'50 MB'}]} />
+                        options={[
+                          {value:'5',label:'5 MB'},{value:'10',label:'10 MB'},
+                          {value:'25',label:'25 MB'},{value:'50',label:'50 MB'},
+                        ]} />
                     </FieldRow>
                   </div>
-                  <div className="flex gap-3 pt-1">
+
+                  <div className="flex flex-wrap gap-3 pt-1">
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs"
                       onClick={() => toast({ title: 'Backup started', description: 'Manual backup is running…' })}>
                       <HardDrive className="w-3.5 h-3.5" /> Backup Now
@@ -593,8 +583,6 @@ export default function SettingsPage() {
                   <div className="divide-y divide-gray-50">
                     <ToggleRow label="Cache Enabled" description="Store frequently accessed data in memory for speed"
                       checked={system.cacheEnabled} onChange={v => setSys('cacheEnabled', v)} />
-                    <ToggleRow label="Debug Mode" description="Show detailed error logs (disable in production)"
-                      checked={system.debugMode} onChange={v => setSys('debugMode', v)} />
                     <ToggleRow label="Maintenance Mode" description="Temporarily disable access for all non-admin users"
                       checked={system.maintenanceMode} onChange={v => setSys('maintenanceMode', v)} />
                   </div>
@@ -604,7 +592,9 @@ export default function SettingsPage() {
                       <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
                       <div>
                         <p className="text-sm font-bold text-yellow-700">Maintenance Mode is ON</p>
-                        <p className="text-xs text-yellow-600 mt-0.5">Only admin accounts can log in. All other users will see a maintenance notice.</p>
+                        <p className="text-xs text-yellow-600 mt-0.5">
+                          Only admin accounts can log in. All other users will see a maintenance notice.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -613,7 +603,9 @@ export default function SettingsPage() {
                   <div className="border border-red-200 rounded-xl p-4 space-y-3 bg-red-50/50">
                     <div className="flex items-start gap-2 mb-3">
                       <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-red-600 font-semibold">These actions are irreversible. Proceed with extreme caution.</p>
+                      <p className="text-xs text-red-600 font-semibold">
+                        These actions are irreversible. Proceed with extreme caution.
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-3">
                       <Button size="sm" variant="outline" className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
@@ -628,47 +620,19 @@ export default function SettingsPage() {
                   </div>
                 </CardContent>
               </Card>
-
-              {/* System Info */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                    <Info className="w-4 h-4 text-gray-400" /> System Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      ['Application', 'ClinicSys v2.1.0'],
-                      ['Environment', 'Production'],
-                      ['Database',    'MySQL 8.0.36'],
-                      ['Server',      'Ubuntu 22.04 LTS'],
-                      ['PHP Version', '8.2.12'],
-                      ['Last Backup', 'Mar 2, 2026 – 03:00 AM'],
-                      ['Storage Used','4.2 GB / 20 GB'],
-                      ['Uptime',      '99.98%'],
-                    ].map(([k, v]) => (
-                      <div key={k} className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">{k}</p>
-                        <p className="text-sm font-bold text-gray-700 mt-0.5">{v}</p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           )}
 
           {/* ══ SAVE BUTTON ══ */}
-          <div className="flex justify-end gap-3 pt-1 pb-4">
-            <Button variant="outline" onClick={() => {
+          <div className="flex flex-col sm:flex-row justify-end gap-3 pt-1 pb-4">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => {
               toast({ title: 'Changes discarded' });
               if (activeTab === 'clinic') setClinic(DEFAULT_CLINIC);
             }}>
               <RefreshCw className="w-4 h-4 mr-1.5" /> Discard
             </Button>
             <Button onClick={handleSave} disabled={saving || loadingClinic}
-              className="bg-blue-600 hover:bg-blue-700 text-white min-w-[130px]">
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white min-w-[130px]">
               {saving
                 ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Saving…</>
                 : saved

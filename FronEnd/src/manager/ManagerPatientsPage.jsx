@@ -622,14 +622,9 @@ export default function PatientsPage() {
                       { value: 'Female',     label: 'Female'     },
                     ]} />
                 </div>
-                <Button variant="outline" size="sm"
-                  onClick={() => { setSearch(''); setStatusFil('All Status'); setGenderFil('All Gender'); setCurrentPage(1); }}>
-                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Reset
-                </Button>
-                <div className="flex-1" />
-                <Button size="sm" variant="ghost" onClick={fetchPatients} disabled={loading} className="h-9 px-3">
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                </Button>
+                            <Button variant="outline" size="sm" onClick={fetchPatients} disabled={loading}>
+                            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Reset
+                          </Button>
               </div>
             </CardContent>
 
@@ -687,7 +682,7 @@ export default function PatientsPage() {
                       <td className="py-3 px-4 text-xs text-gray-500 whitespace-nowrap">{fmtDate(p.dateRegistered)}</td>
                       <td className="py-3 px-4">
                         <Button size="sm" variant="outline"
-                          className="h-7 px-3 text-xs gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-400"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all"
                           onClick={() => handleViewClick(p)}>
                           <Eye className="w-3.5 h-3.5" /> View
                         </Button>

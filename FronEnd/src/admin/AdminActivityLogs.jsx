@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -13,11 +13,26 @@ import {
 
 /* ══════════════ CONSTANTS ══════════════ */
 
-const MODULES = ['All Modules', 'Authentication', 'Patient', 'Appointment', 'Doctor Schedule', 'Consultation', 'User Management', 'CRM'];
+const MODULES = ['All Modules', 'Authentication', 'Patient', 'Appointment', 'Doctor Schedule', 'Consultation', 'User Management', 'CRM', 'Billing/POS'];
 const ACTION_TYPES = ['All Actions', 'Login', 'Logout', 'Create', 'Update', 'Delete', 'Status Update', 'Password Change'];
-const USERS = ['All Users', 'Admin User', 'Dr. Sarah Smith', 'Dr. Michael Chen', 'Staff Maria', 'Staff Carlo'];
 const ROLES = ['All Roles', 'Admin', 'Doctor', 'Staff'];
 const PAGE_SIZE = 10;
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
+
+const authHeaders = () => ({
+  'Content-Type': 'application/json',
+  Accept: 'application/json',
+  Authorization: `Bearer ${localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || ''}`,
+});
+
+const apiFetch = async (path) => {
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || `HTTP ${res.status}`);
+  }
+  return res.json();
+};
 
 /* ══════════════ MODULE CONFIG ══════════════ */
 const MODULE_CONFIG = {
@@ -28,6 +43,7 @@ const MODULE_CONFIG = {
   Consultation:      { icon: ClipboardList, bg: 'bg-orange-50', color: 'text-orange-600' },
   'User Management': { icon: Users,         bg: 'bg-rose-50',   color: 'text-rose-600'   },
   CRM:               { icon: BarChart2,     bg: 'bg-yellow-50', color: 'text-yellow-600' },
+  'Billing/POS':     { icon: FileText,      bg: 'bg-cyan-50',   color: 'text-cyan-600'   },
 };
 
 const ACTION_CONFIG = {
@@ -141,8 +157,8 @@ const SelectBox = ({ value, onChange, options }) => (
 
 /* ══════════════ MAIN PAGE ══════════════ */
 export default function ActivityLogs() {
-  const [dateFrom,    setDateFrom]    = useState('2026-03-02');
-  const [dateTo,      setDateTo]      = useState('2026-03-02');
+  const [dateFrom,    setDateFrom]    = useState('');
+  const [dateTo,      setDateTo]      = useState('');
   const [userFilter,  setUserFilter]  = useState('All Users');
   const [moduleFilter,setModuleFilter]= useState('All Modules');
   const [actionFilter,setActionFilter]= useState('All Actions');
@@ -152,6 +168,130 @@ export default function ActivityLogs() {
   const [page,        setPage]        = useState(1);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [logs, setLogs] = useState(RAW_LOGS);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  const usersOptions = useMemo(() => {
+    const uniqueUsers = Array.from(new Set(logs.map((l) => l.user).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    return ['All Users', ...uniqueUsers];
+  }, [logs]);
+
+  const normalizeDateTime = (value) => {
+    if (!value) return new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value).slice(0, 19).replace('T', ' ');
+    }
+    return parsed.toISOString().slice(0, 19).replace('T', ' ');
+  };
+
+  const mapActivityLogs = useCallback((appointments, consultations, transactions, users, patients) => {
+    const asRows = (value) => (Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : []);
+    const normalizeRole = (role, fallback = 'Staff') => {
+      const src = String(role || fallback).trim();
+      if (!src) return fallback;
+      return src.charAt(0).toUpperCase() + src.slice(1).toLowerCase();
+    };
+
+    const items = [];
+
+    asRows(appointments).forEach((row) => {
+      const status = String(row.status || '').toLowerCase();
+      items.push({
+        id: `APT-${row.appointment_id}`,
+        datetime: normalizeDateTime(`${row.appointment_date || ''}T${row.appointment_time || '00:00'}`),
+        user: row.doctor_name || 'System',
+        role: 'Doctor',
+        module: 'Appointment',
+        action: status === 'scheduled' ? 'Create' : 'Status Update',
+        desc: `Appointment #${row.appointment_id} for ${row.patient_name || 'Patient'} with ${row.doctor_name || 'Doctor'} is ${status || 'scheduled'}`,
+        status: 'success',
+      });
+    });
+
+    asRows(consultations).forEach((row) => {
+      items.push({
+        id: `CON-${row.consultation_id}`,
+        datetime: normalizeDateTime(row.updated_at || row.completed_at),
+        user: row.doctor_name || 'Doctor',
+        role: 'Doctor',
+        module: 'Consultation',
+        action: String(row.status || '').toLowerCase() === 'draft' ? 'Create' : 'Update',
+        desc: `Consultation #${row.consultation_id} updated for ${row.patient_name || 'Patient'} (${row.status || 'draft'})`,
+        status: 'success',
+      });
+    });
+
+    asRows(transactions).forEach((row) => {
+      items.push({
+        id: `POS-${row.transaction_id}`,
+        datetime: normalizeDateTime(row.created_at),
+        user: row.staff_name || 'Staff',
+        role: 'Staff',
+        module: 'Billing/POS',
+        action: 'Create',
+        desc: `Transaction ${row.transaction_number || row.transaction_id} paid by ${row.patient_name || 'Patient'} (${row.payment_method || 'cash'})`,
+        status: String(row.status || '').toLowerCase() === 'paid' ? 'success' : 'failed',
+      });
+    });
+
+    asRows(users).forEach((row) => {
+      items.push({
+        id: `USR-${row.user_id}`,
+        datetime: normalizeDateTime(row.updated_at || row.created_at),
+        user: `${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email || 'User',
+        role: normalizeRole(row.role, 'Admin'),
+        module: 'User Management',
+        action: row.created_at === row.updated_at ? 'Create' : 'Update',
+        desc: `User account ${row.email || row.user_id} is ${String(row.status || 'active').toLowerCase()}`,
+        status: 'success',
+      });
+    });
+
+    asRows(patients).forEach((row) => {
+      items.push({
+        id: `PAT-${row.id}`,
+        datetime: normalizeDateTime(row.updated_at || row.created_at),
+        user: `${row.first_name || ''} ${row.last_name || ''}`.trim() || row.email || 'Patient',
+        role: 'Staff',
+        module: 'Patient',
+        action: row.created_at === row.updated_at ? 'Create' : 'Update',
+        desc: `Patient record ${row.id} (${row.email || 'no email'}) is ${String(row.status || 'active').toLowerCase()}`,
+        status: 'success',
+      });
+    });
+
+    return items.sort((a, b) => String(b.datetime).localeCompare(String(a.datetime)));
+  }, []);
+
+  const loadLogs = useCallback(async () => {
+    setLoadingLogs(true);
+    try {
+      const [appointmentsRes, consultationsRes, transactionsRes, usersRes, patientsRes] = await Promise.allSettled([
+        apiFetch('/appointments'),
+        apiFetch('/consultations'),
+        apiFetch('/transactions'),
+        apiFetch('/users'),
+        apiFetch('/patients'),
+      ]);
+
+      const appointments = appointmentsRes.status === 'fulfilled' ? appointmentsRes.value : [];
+      const consultations = consultationsRes.status === 'fulfilled' ? consultationsRes.value : [];
+      const transactions = transactionsRes.status === 'fulfilled' ? transactionsRes.value : [];
+      const users = usersRes.status === 'fulfilled' ? usersRes.value : [];
+      const patients = patientsRes.status === 'fulfilled' ? patientsRes.value : [];
+
+      const mapped = mapActivityLogs(appointments, consultations, transactions, users, patients);
+      setLogs(mapped.length ? mapped : RAW_LOGS);
+    } catch {
+      setLogs(RAW_LOGS);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, [mapActivityLogs]);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
 
   /* ── filtered + searched logs ── */
   const filtered = useMemo(() => {
@@ -162,6 +302,9 @@ export default function ActivityLogs() {
       if (roleFilter   !== 'All Roles'   && l.role   !== roleFilter)   return false;
       if (statusFil    === 'Success'     && l.status !== 'success')    return false;
       if (statusFil    === 'Failed'      && l.status !== 'failed')     return false;
+      const logDate = String(l.datetime || '').slice(0, 10);
+      if (dateFrom && logDate < dateFrom) return false;
+      if (dateTo && logDate > dateTo) return false;
       if (search) {
         const q = search.toLowerCase();
         return l.id.toLowerCase().includes(q) ||
@@ -172,7 +315,7 @@ export default function ActivityLogs() {
       }
       return true;
     });
-  }, [logs, userFilter, moduleFilter, actionFilter, roleFilter, statusFil, search]);
+  }, [logs, userFilter, moduleFilter, actionFilter, roleFilter, statusFil, dateFrom, dateTo, search]);
 
   /* ── pagination ── */
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
@@ -189,7 +332,7 @@ export default function ActivityLogs() {
   const resetFilters = () => {
     setUserFilter('All Users'); setModuleFilter('All Modules');
     setActionFilter('All Actions'); setRoleFilter('All Roles');
-    setStatusFil('All'); setSearch(''); setPage(1);
+    setStatusFil('All'); setSearch(''); setDateFrom(''); setDateTo(''); setPage(1);
   };
 
   const handleClearLogs = () => { setLogs([]); setShowClearConfirm(false); };
@@ -219,7 +362,7 @@ export default function ActivityLogs() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">User</label>
-                <SelectBox value={userFilter} onChange={v => { setUserFilter(v); setPage(1); }} options={USERS} />
+                <SelectBox value={userFilter} onChange={v => { setUserFilter(v); setPage(1); }} options={usersOptions} />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Module</label>
@@ -255,6 +398,9 @@ export default function ActivityLogs() {
               </Button>
               <Button size="sm" variant="outline">
                 <FileText className="w-3.5 h-3.5 mr-1.5" /> Excel
+              </Button>
+              <Button size="sm" variant="outline" onClick={loadLogs} disabled={loadingLogs}>
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loadingLogs ? 'animate-spin' : ''}`} /> Refresh
               </Button>
               <Button
                 size="sm"
@@ -326,7 +472,15 @@ export default function ActivityLogs() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {paginated.length === 0 && (
+                  {loadingLogs && (
+                    <tr>
+                      <td colSpan={8} className="text-center py-10 text-gray-400">
+                        <RefreshCw className="w-6 h-6 mx-auto mb-2 animate-spin text-blue-500" />
+                        <p className="text-sm font-medium">Fetching activity logs...</p>
+                      </td>
+                    </tr>
+                  )}
+                  {!loadingLogs && paginated.length === 0 && (
                     <tr>
                       <td colSpan={8} className="text-center py-16 text-gray-400">
                         <Activity className="w-10 h-10 mx-auto mb-2 text-gray-200" />

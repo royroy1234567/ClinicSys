@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import MainLayout from '../components/layouts/MainLayout';
 import {
   Calendar, Clock, User, Phone, Mail, FileText,
@@ -106,7 +107,7 @@ const MiniCalendar = ({ doctorSchedule, selectedDate, onSelect }) => {
     if(!d) return 'empty';
     const ds = fmtD(d);
     const now = new Date(); now.setHours(0,0,0,0);
-    if(d < now) return 'past';
+    if(d <= now) return 'past';
     const sched = doctorSchedule[ds];
     if(!sched) return 'no-schedule';
     const allSlots = sched.slots.flatMap(s => generateSlotTimes(s.start, s.end, s.duration));
@@ -184,7 +185,7 @@ const GeneralCalendar = ({ allDoctorSchedules, selectedDate, onSelect }) => {
     if(!d) return 'empty';
     const ds = fmtD(d);
     const now = new Date(); now.setHours(0,0,0,0);
-    if(d < now) return 'past';
+    if(d <= now) return 'past';
     let hasAny = false;
     for(const sched of Object.values(allDoctorSchedules)) {
       const day = sched[ds];
@@ -249,6 +250,7 @@ const GeneralCalendar = ({ allDoctorSchedules, selectedDate, onSelect }) => {
    MAIN PAGE
 ═══════════════════════════════════════════════ */
 export default function PatientAppointmentPage() {
+  const location = useLocation();
   const [doctors,         setDoctors]         = useState([]);
   const [docLoading,      setDocLoading]       = useState(true);
   const [docError,        setDocError]         = useState(null);
@@ -273,12 +275,32 @@ export default function PatientAppointmentPage() {
   const [form,      setForm]      = useState({ name:'', contact:'', email:'', service_id:'', reason:'', notes:'' });
   const [notifs,    setNotifs]    = useState([]);
   const [newAptId,  setNewAptId]  = useState(null);
+  const [followUpSource, setFollowUpSource] = useState(null);
 
   // For general booking: available slots across all doctors for a selected date/time
   const [generalSlots, setGeneralSlots] = useState([]); // [{doctorId, doctorName, doctorColor, time}]
 
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const dismissNotif = (id) => setNotifs(n=>n.filter(x=>x.id!==id));
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const fromFollowUp = params.get('followup') === '1';
+    const date = params.get('date') || '';
+    if (!fromFollowUp || !date) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (date <= today) return;
+
+    setFollowUpSource({
+      consultationId: params.get('consultation_id') || null,
+      date,
+    });
+    setBookingMode('general');
+    setStep('general-calendar');
+    setSelDate(date);
+    setSelTime('');
+  }, [location.search]);
 
   /* ── Fetch logged-in patient profile ── */
   useEffect(() => {
@@ -413,6 +435,12 @@ export default function PatientAppointmentPage() {
     setGeneralSlots(sorted);
   };
 
+  useEffect(() => {
+    if (bookingMode !== 'general' || !selDate) return;
+    pickGeneralDate(selDate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingMode, selDate, doctorSchedules, doctors]);
+
   /* ── When a general time is selected, assign the doctor ── */
   const pickGeneralTime = (slot) => {
     setSelTime(slot.time);
@@ -528,6 +556,11 @@ export default function PatientAppointmentPage() {
                 </div>
                 <h1 className="text-3xl font-black leading-tight">Book an Appointment</h1>
                 <p className="text-blue-200 text-sm mt-2 max-w-lg">Select a doctor, choose an available date and time, and confirm your appointment.</p>
+                {followUpSource && (
+                  <p className="mt-3 inline-flex items-center gap-2 bg-white/15 border border-white/20 text-xs text-white px-3 py-1.5 rounded-full font-semibold">
+                    Follow-up appointment from previous consultation
+                  </p>
+                )}
               </div>
               <div className="text-right text-sm text-blue-200 space-y-1">
                 <div className="flex items-center gap-2 justify-end"><MapPin className="w-3.5 h-3.5"/>{CLINIC.address}</div>
@@ -641,6 +674,11 @@ export default function PatientAppointmentPage() {
               <div>
                 <p className="font-bold">General Appointment</p>
                 <p className="text-xs mt-0.5 text-indigo-500">Pick a date and time below. The system will automatically assign you the first available doctor for that slot.</p>
+                {followUpSource && (
+                  <p className="text-xs mt-1 font-semibold text-indigo-700">
+                    Follow-up date preselected: {fmtDateLong(followUpSource.date)}
+                  </p>
+                )}
               </div>
             </div>
 

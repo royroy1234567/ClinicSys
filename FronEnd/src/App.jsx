@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Toaster } from 'sonner';
+import { NotificationProvider } from './context/NotificationContext';
+import { Toaster, toast } from 'sonner';
 
 import LoginPage from './LoginPage';
 import RegisterPage from './RegisterPage';
@@ -12,8 +13,7 @@ import AdminDashboard from './manager/ManagerDashboard';
 import DoctorsPage from './manager/ManagerDoctorsPage';
 import PatientsPage from './manager/ManagerPatientsPage';
 import AppointmentsPage from './manager/ManagerAppointmentsPage';
-import ActivityLogs from './manager/ManagerActivityLogs';
-import AdminSettings from './manager/ManagerSettings';
+import AdminSettings from './admin/AdminSettings';
 import ServiceManagement from './manager/ManagerServiceManagement';
 import AdminAccManagament from './manager/ManagerUserManagement';
 
@@ -111,10 +111,65 @@ const DashboardRouter = () => {
    APP
 ═══════════════════════════════════════════════════ */
 function App() {
+  const lastErrorRef = useRef({ message: '', at: 0 });
+
+  useEffect(() => {
+    const showErrorToast = (rawMessage) => {
+      const message = String(rawMessage || 'Something went wrong. Please try again.').trim();
+      const now = Date.now();
+      if (lastErrorRef.current.message === message && now - lastErrorRef.current.at < 1500) {
+        return;
+      }
+      lastErrorRef.current = { message, at: now };
+      toast.error(message);
+    };
+
+    const readErrorMessage = async (res) => {
+      try {
+        const body = await res.clone().json();
+        return body?.message || body?.error || `Request failed (${res.status})`;
+      } catch {
+        return `Request failed (${res.status})`;
+      }
+    };
+
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+      try {
+        const res = await originalFetch(...args);
+        if (!res.ok) {
+          const message = await readErrorMessage(res);
+          showErrorToast(message);
+        }
+        return res;
+      } catch (err) {
+        showErrorToast(err?.message || 'Network error. Please check your connection.');
+        throw err;
+      }
+    };
+
+    const onUnhandled = (event) => {
+      showErrorToast(event?.reason?.message || event?.reason || 'Unexpected application error.');
+    };
+    const onError = (event) => {
+      showErrorToast(event?.error?.message || event?.message || 'Unexpected application error.');
+    };
+
+    window.addEventListener('unhandledrejection', onUnhandled);
+    window.addEventListener('error', onError);
+
+    return () => {
+      window.fetch = originalFetch;
+      window.removeEventListener('unhandledrejection', onUnhandled);
+      window.removeEventListener('error', onError);
+    };
+  }, []);
+
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+      <NotificationProvider>
+        <BrowserRouter>
+          <Routes>
 
           {/* ── FULLY PUBLIC ── */}
           <Route path="/" element={<ClinicSysLanding />} />
@@ -137,8 +192,6 @@ function App() {
             <Route path="/patients"        element={<PatientsPage />} />
             <Route path="/appointments"    element={<AppointmentsPage />} />
             <Route path="/services"        element={<ServiceManagement />} />
-            <Route path="/activity"        element={<ActivityLogs />} />
-            <Route path="/settings"        element={<AdminSettings />} />
             <Route path="/user-management" element={<AdminAccManagament />} />
           </Route>
 
@@ -172,15 +225,17 @@ function App() {
   <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
             <Route path="/acc-management" element={<AdminAcc />} />
             <Route path="/admin-activity" element={<AdminActLogs />} />
+            <Route path="/settings"        element={<AdminSettings />} />
 
             </Route>
           {/* ── 404 ── */}
           <Route path="*" element={<Navigate to="/" replace />} />
 
-        </Routes>
+          </Routes>
 
-        <Toaster />
-      </BrowserRouter>
+          <Toaster />
+        </BrowserRouter>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

@@ -3,12 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Models\clinic_users;
+use App\Models\patients;
 use App\Models\queue_entries;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class QueueEntriesController extends Controller
 {
+    private const ACTIVE_QUEUE_STATUSES = ['waiting', 'called', 'ongoing'];
+    private const PH_TIMEZONE = 'Asia/Manila';
+
     public function index(Request $request)
     {
         $date = $request->query('date', now()->toDateString());
@@ -31,6 +39,15 @@ class QueueEntriesController extends Controller
                     ->max('queue_number') + 1;
 
                 foreach ($appointmentsToQueue as $appointment) {
+                    $alreadyActive = queue_entries::where('queue_date', $date)
+                        ->where('patient_id', $appointment->patient_id)
+                        ->whereIn('status', self::ACTIVE_QUEUE_STATUSES)
+                        ->exists();
+
+                    if ($alreadyActive) {
+                        continue;
+                    }
+
                     $isSenior = (int) ($appointment->patient->age ?? 0) >= 60;
                     queue_entries::create([
                         'appointment_id' => $appointment->appointment_id,
@@ -41,32 +58,20 @@ class QueueEntriesController extends Controller
                         'source' => 'appointment',
                         'priority' => $isSenior ? 'senior' : 'appointment',
                         'status' => 'waiting',
-                        'arrival_time' => $appointment->appointment_time,
+                        // Appointment queue arrival follows the booked appointment time.
+                        'arrival_time' => $this->appointmentArrivalTime($appointment),
                     ]);
                 }
             });
         }
 
-        $rows = queue_entries::with(['patient', 'doctor', 'appointment'])
+        $rows = queue_entries::with(['patient', 'doctor', 'appointment.service', 'service'])
             ->where('queue_date', $date)
+            ->orderByRaw('CASE WHEN arrival_time IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('arrival_time')
             ->orderBy('queue_number')
             ->get()
-            ->map(function (queue_entries $q) {
-                return [
-                    'queue_entry_id' => $q->queue_entry_id,
-                    'queue_number' => $q->queue_number,
-                    'patient_id' => $q->patient_id,
-                    'patient_name' => trim(($q->patient->first_name ?? '') . ' ' . ($q->patient->last_name ?? '')),
-                    'doctor_id' => $q->doctor_id,
-                    'doctor_name' => $q->doctor ? trim(($q->doctor->first_name ?? '') . ' ' . ($q->doctor->last_name ?? '')) : null,
-                    'priority' => $q->priority,
-                    'status' => str_replace('-', '_', $q->status),
-                    'source' => str_replace('-', '', $q->source),
-                    'arrival_time' => $q->arrival_time ? substr((string) $q->arrival_time, 0, 5) : null,
-                    'appointment_id' => $q->appointment_id,
-                    'reason' => $q->appointment?->reason,
-                ];
-            });
+            ->map(fn(queue_entries $q) => $this->formatQueueEntry($q));
 
         return response()->json($rows);
     }
@@ -74,43 +79,57 @@ class QueueEntriesController extends Controller
     public function storeWalkin(Request $request)
     {
         $request->validate([
-            'patient_id' => 'required|integer|exists:patients,id',
+            'patient_id' => 'nullable|integer|exists:patients,id',
+            'name' => 'required_without:patient_id|string|max:150',
+            'age' => 'nullable|integer|min:0|max:120',
+            'contact' => 'nullable|string|max:30',
+            'service_id' => 'required|integer|exists:services,service_id',
             'doctor_id' => 'nullable|integer|exists:clinic_users,user_id',
             'priority' => 'required|in:senior,walkin',
         ]);
 
         $created = DB::transaction(function () use ($request) {
+            $patientId = $request->patient_id;
+            if (!$patientId) {
+                $patient = $this->createWalkinPatient(
+                    (string) $request->name,
+                    $request->age,
+                    $request->contact
+                );
+                $patientId = $patient->id;
+            }
+
             $date = now()->toDateString();
+            $alreadyActive = queue_entries::where('queue_date', $date)
+                ->where('patient_id', $patientId)
+                ->whereIn('status', self::ACTIVE_QUEUE_STATUSES)
+                ->exists();
+
+            if ($alreadyActive) {
+                throw ValidationException::withMessages([
+                    'patient_id' => ['Patient is already in queue (waiting/called/ongoing).'],
+                ]);
+            }
+
             $next = (int) queue_entries::where('queue_date', $date)->max('queue_number') + 1;
 
             return queue_entries::create([
-                'patient_id' => $request->patient_id,
+                'patient_id' => $patientId,
                 'doctor_id' => $request->doctor_id,
+                'service_id' => $request->service_id,
                 'queue_date' => $date,
                 'queue_number' => $next,
                 'source' => 'walk-in',
                 'priority' => $request->priority,
                 'status' => 'waiting',
-                'arrival_time' => now()->format('H:i:s'),
+                // Walk-in queue arrival uses real check-in time in PH timezone.
+                'arrival_time' => now(self::PH_TIMEZONE)->format('H:i:s'),
             ]);
         });
 
-        $created->load(['patient', 'doctor']);
+        $created->load(['patient', 'doctor', 'service']);
 
-        return response()->json([
-            'queue_entry_id' => $created->queue_entry_id,
-            'queue_number' => $created->queue_number,
-            'patient_id' => $created->patient_id,
-            'patient_name' => trim(($created->patient->first_name ?? '') . ' ' . ($created->patient->last_name ?? '')),
-            'doctor_id' => $created->doctor_id,
-            'doctor_name' => $created->doctor ? trim(($created->doctor->first_name ?? '') . ' ' . ($created->doctor->last_name ?? '')) : null,
-            'priority' => $created->priority,
-            'status' => str_replace('-', '_', $created->status),
-            'source' => 'walkin',
-            'arrival_time' => $created->arrival_time ? substr((string) $created->arrival_time, 0, 5) : null,
-            'appointment_id' => $created->appointment_id,
-            'reason' => null,
-        ], 201);
+        return response()->json($this->formatQueueEntry($created), 201);
     }
 
     public function updateStatus(Request $request, $id)
@@ -121,7 +140,34 @@ class QueueEntriesController extends Controller
 
         $entry = queue_entries::findOrFail($id);
         $status = str_replace('_', '-', $request->status);
-        $now = now();
+        $now = now(self::PH_TIMEZONE);
+
+        if ($status === 'called') {
+            if (!$entry->doctor_id) {
+                return response()->json(['message' => 'Assign a doctor before calling this patient.'], 422);
+            }
+
+            $doctor = clinic_users::find($entry->doctor_id);
+            if (!$doctor || strtolower($doctor->availability_status ?? 'unavailable') !== 'available') {
+                return response()->json(['message' => 'Selected doctor is not available yet.'], 422);
+            }
+
+            if ($entry->source === 'appointment' && $entry->arrival_time) {
+                $arrival = now(self::PH_TIMEZONE)->setTimeFromTimeString((string) $entry->arrival_time);
+                if (now(self::PH_TIMEZONE)->lt($arrival)) {
+                    return response()->json(['message' => 'Appointment patient is not yet ready to be called.'], 422);
+                }
+            }
+
+            $doctorHasOngoing = queue_entries::where('doctor_id', $entry->doctor_id)
+                ->where('queue_date', $entry->queue_date)
+                ->where('status', 'ongoing')
+                ->where('queue_entry_id', '!=', $entry->queue_entry_id)
+                ->exists();
+            if ($doctorHasOngoing) {
+                return response()->json(['message' => 'Doctor already has an ongoing consultation.'], 422);
+            }
+        }
 
         $updates = ['status' => $status];
         if ($status === 'called') {
@@ -134,10 +180,78 @@ class QueueEntriesController extends Controller
 
         $entry->update($updates);
 
+        if ($entry->appointment_id && in_array($status, ['ongoing', 'completed', 'no-show'], true)) {
+            $appointment = Appointment::find($entry->appointment_id);
+            if ($appointment) {
+                $appointmentStatus = $status === 'no-show' ? 'no_show' : $status;
+                if ($appointment->status !== $appointmentStatus) {
+                    $appointment->status = $appointmentStatus;
+                    $appointment->save();
+                }
+            }
+        }
+
+        if ($entry->doctor_id) {
+            $doctor = clinic_users::find($entry->doctor_id);
+            if ($doctor) {
+                if ($status === 'ongoing') {
+                    $doctor->availability_status = 'unavailable';
+                    $doctor->save();
+                }
+
+                if (in_array($status, ['completed', 'no-show'], true)) {
+                    $stillOngoing = queue_entries::where('doctor_id', $entry->doctor_id)
+                        ->where('queue_date', $entry->queue_date)
+                        ->where('status', 'ongoing')
+                        ->exists();
+                    if (!$stillOngoing) {
+                        $doctor->availability_status = 'available';
+                        $doctor->save();
+                    }
+                }
+            }
+        }
+
         return response()->json([
             'message' => 'Queue status updated.',
             'queue_entry_id' => $entry->queue_entry_id,
             'status' => str_replace('-', '_', $entry->status),
+        ]);
+    }
+
+    public function assignDoctor(Request $request, $id)
+    {
+        $request->validate([
+            'doctor_id' => 'required|integer|exists:clinic_users,user_id',
+        ]);
+
+        $entry = queue_entries::with(['patient', 'doctor', 'appointment.service', 'service'])->findOrFail($id);
+        $doctor = clinic_users::findOrFail($request->doctor_id);
+        if ($doctor->role !== 'Doctor') {
+            return response()->json(['message' => 'Only doctors can be assigned.'], 422);
+        }
+
+        if (strtolower((string) ($doctor->availability_status ?? 'unavailable')) !== 'available') {
+            return response()->json(['message' => 'Doctor is unavailable and cannot be assigned.'], 422);
+        }
+
+        $doctorHasActivePatient = queue_entries::whereDate('queue_date', now()->toDateString())
+            ->where('doctor_id', $doctor->user_id)
+            ->whereIn('status', ['called', 'ongoing'])
+            ->where('queue_entry_id', '!=', $entry->queue_entry_id)
+            ->exists();
+
+        if ($doctorHasActivePatient) {
+            return response()->json(['message' => 'Doctor already has an active patient.'], 422);
+        }
+
+        $entry->doctor_id = $doctor->user_id;
+        $entry->save();
+        $entry->load(['patient', 'doctor', 'appointment.service', 'service']);
+
+        return response()->json([
+            'message' => 'Doctor assigned successfully.',
+            'entry' => $this->formatQueueEntry($entry),
         ]);
     }
 
@@ -156,6 +270,17 @@ class QueueEntriesController extends Controller
             ], 409);
         }
 
+        $alreadyActive = queue_entries::where('queue_date', $date)
+            ->where('patient_id', $appointment->patient_id)
+            ->whereIn('status', self::ACTIVE_QUEUE_STATUSES)
+            ->exists();
+
+        if ($alreadyActive) {
+            return response()->json([
+                'message' => 'Patient is already in queue (waiting/called/ongoing).',
+            ], 422);
+        }
+
         $created = DB::transaction(function () use ($appointment, $date) {
             $next = (int) queue_entries::where('queue_date', $date)->max('queue_number') + 1;
 
@@ -163,12 +288,14 @@ class QueueEntriesController extends Controller
                 'appointment_id' => $appointment->appointment_id,
                 'patient_id' => $appointment->patient_id,
                 'doctor_id' => $appointment->doctor_id,
+                'service_id' => $appointment->service_id,
                 'queue_date' => $date,
                 'queue_number' => $next,
                 'source' => 'appointment',
                 'priority' => 'appointment',
                 'status' => 'waiting',
-                'arrival_time' => now()->format('H:i:s'),
+                // Appointment queue arrival follows the booked appointment time.
+                'arrival_time' => $this->appointmentArrivalTime($appointment),
             ]);
         });
 
@@ -176,5 +303,76 @@ class QueueEntriesController extends Controller
             'message' => 'Appointment checked in.',
             'queue_entry_id' => $created->queue_entry_id,
         ], 201);
+    }
+
+    private function createWalkinPatient(string $fullName, $age = null, $contact = null): patients
+    {
+        $parts = array_values(array_filter(explode(' ', trim(preg_replace('/\s+/', ' ', $fullName)))));
+        $firstName = $parts[0] ?? 'Walk-in';
+        $lastName = count($parts) > 1 ? implode(' ', array_slice($parts, 1)) : 'Patient';
+        $safeBase = Str::slug($fullName ?: 'walkin', '.');
+        $email = sprintf('%s.%s@walkin.local', $safeBase ?: 'walkin', Str::lower(Str::random(6)));
+
+        return patients::create([
+            'first_name' => Str::title($firstName),
+            'middle_name' => null,
+            'last_name' => Str::title($lastName),
+            'dob' => now()->subYears((int) ($age ?? 30))->toDateString(),
+            'age' => (int) ($age ?? 30),
+            'gender' => 'Unspecified',
+            'civil_status' => null,
+            'nationality' => null,
+            'mobile' => $contact ?: '+639000000000',
+            'email' => $email,
+            'street' => 'Walk-in',
+            'city' => 'Walk-in',
+            'province' => 'Walk-in',
+            'password' => Hash::make(Str::random(20)),
+            'blood_type' => null,
+            'allergies' => null,
+            'conditions' => null,
+            'medications' => null,
+            'emergency_name' => 'Walk-in Contact',
+            'emergency_relationship' => 'N/A',
+            'emergency_contact' => $contact ?: '+639000000000',
+            'agree_privacy' => true,
+            'agree_storage' => true,
+            'status' => 'Active',
+        ]);
+    }
+
+    private function formatQueueEntry(queue_entries $q): array
+    {
+        $service = $q->appointment?->service ?? $q->service;
+        return [
+            'queue_entry_id' => $q->queue_entry_id,
+            'queue_number' => $q->queue_number,
+            'patient_id' => $q->patient_id,
+            'patient_name' => trim(($q->patient->first_name ?? '') . ' ' . ($q->patient->last_name ?? '')),
+            'patient_age' => $q->patient->age ?? null,
+            'patient_contact' => $q->patient->mobile ?? null,
+            'doctor_id' => $q->doctor_id,
+            'doctor_name' => $q->doctor ? trim(($q->doctor->first_name ?? '') . ' ' . ($q->doctor->last_name ?? '')) : null,
+            'doctor_availability' => $q->doctor ? strtolower($q->doctor->availability_status ?: 'unavailable') : null,
+            'priority' => $q->priority,
+            'status' => str_replace('-', '_', $q->status),
+            'source' => str_replace('-', '', $q->source),
+            'arrival_time' => $q->arrival_time ? substr((string) $q->arrival_time, 0, 5) : null,
+            'appointment_id' => $q->appointment_id,
+            'reason' => $q->appointment?->reason,
+            'service_id' => $service?->service_id,
+            'service_name' => $service?->service_name,
+            'service_price' => $service ? (float) $service->price : null,
+        ];
+    }
+
+    private function appointmentArrivalTime(Appointment $appointment): string
+    {
+        $time = (string) $appointment->appointment_time;
+        if (!$time) {
+            return now(self::PH_TIMEZONE)->format('H:i:s');
+        }
+
+        return strlen($time) === 5 ? "{$time}:00" : $time;
     }
 }

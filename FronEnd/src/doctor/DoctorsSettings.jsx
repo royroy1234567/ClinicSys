@@ -1,40 +1,76 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
+import LogoutConfirmModal from '../components/common/LogoutConfirmModal';
 import {
   User, Lock, Bell, Shield, LogOut, Info,
   Check, X, Eye, EyeOff, Phone, Mail,
   Hash, Pencil, Save, AlertCircle, CheckCircle2,
   ChevronRight, Heart, AlertTriangle, MapPin,
   Calendar, Clock, Stethoscope, Building2,
-  FileText, Globe, Monitor, Sun, Moon, UserX,
+  FileText, Globe, Monitor, Sun, Moon, Loader2,
 } from 'lucide-react';
 
 /* ══════════════════════════════════════════════════
-   MOCK DATA
+   API LAYER
 ══════════════════════════════════════════════════ */
-const MOCK_ACCOUNT = {
-  doctorId:  'DR-00005',
-  createdAt: 'January 15, 2024',
-  lastLogin: 'May 12, 2026 – 9:10 AM',
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
+
+const apiFetch = async (url, options = {}) => {
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...options,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: 'Request failed' }));
+    throw new Error(err.message || `HTTP ${res.status}`);
+  }
+  return res.json();
 };
 
-const INITIAL_PROFILE = {
-  fullName:       'Dr. Sofia Tan',
-  specialization: 'Neurologist',
-  department:     'Neurology',
-  room:           'Room 410',
-  contact:        '+63 921 500 0005',
-  email:          's.tan@clinic.com',
-  licenseNo:      'PRC-2019-00412',
-  bio:            'Board-certified neurologist with 8 years of clinical experience specializing in headache disorders and epilepsy.',
-};
+// GET /api/auth/me — returns { success, user: { user_id, first_name, last_name, ... } }
+const fetchMe = () =>
+  fetch(`${API_BASE}/auth/me`, {
+    headers: {
+      'Accept': 'application/json',
+      Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}`,
+    },
+  }).then(r => r.json());
 
+// PATCH /api/users/{id} — update profile fields
+const updateProfile = (userId, data) =>
+  apiFetch(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+// POST /api/auth/verify-password — verify current password before change
+const verifyPassword = (password) =>
+  apiFetch('/auth/verify-password', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
+
+// PATCH /api/users/{id} with new password
+const updatePassword = (userId, data) =>
+  apiFetch(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+// POST /api/auth/logout
+const logoutApi = () =>
+  apiFetch('/auth/logout', { method: 'POST' });
 
 /* ══════════════════════════════════════════════════
    TOAST
 ══════════════════════════════════════════════════ */
 function Toast({ message, type = 'success', onDismiss }) {
-  React.useEffect(() => { const t = setTimeout(onDismiss, 3200); return () => clearTimeout(t); }, []);
+  useEffect(() => { const t = setTimeout(onDismiss, 3200); return () => clearTimeout(t); }, []);
   return (
     <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-sm font-semibold pointer-events-none
       ${type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'}`}>
@@ -55,7 +91,6 @@ function Modal({ onClose, icon: Icon, iconBg, title, subtitle, children, width =
       onClick={onClose}>
       <div className={`bg-white rounded-3xl shadow-2xl w-full ${width} overflow-hidden`}
         onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className={`${iconBg} p-6 relative overflow-hidden`}>
           <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full bg-white/10 pointer-events-none" />
           <div className="absolute bottom-0 right-20 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
@@ -75,7 +110,6 @@ function Modal({ onClose, icon: Icon, iconBg, title, subtitle, children, width =
             </button>
           </div>
         </div>
-        {/* Body */}
         <div className="p-6 max-h-[68vh] overflow-y-auto space-y-4">
           {children}
         </div>
@@ -109,10 +143,10 @@ function Field({ icon: Icon, label, value, editable, onChange, type = 'text', no
       </label>
       {editable ? (
         as === 'textarea' ? (
-          <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows || 3}
+          <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={rows || 3}
             className="w-full px-3.5 py-2.5 text-sm border border-blue-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-800 transition-all resize-none" />
         ) : (
-          <input type={type} value={value} onChange={e => onChange(e.target.value)}
+          <input type={type} value={value || ''} onChange={e => onChange(e.target.value)}
             className="w-full px-3.5 py-2.5 text-sm border border-blue-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-gray-800 transition-all" />
         )
       ) : (
@@ -129,43 +163,73 @@ function Field({ icon: Icon, label, value, editable, onChange, type = 'text', no
 ══════════════════════════════════════════════════ */
 
 /* — Profile — */
-function ProfileModal({ profile, onSave, onClose }) {
-  const [edit, setEdit] = useState(false);
-  const [draft, setDraft] = useState(profile);
+function ProfileModal({ user, onSave, onClose }) {
+  const [edit,    setEdit]    = useState(false);
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState('');
+
+  // Draft maps from API field names
+  const [draft, setDraft] = useState({
+    first_name:      user?.first_name      || '',
+    last_name:       user?.last_name       || '',
+    specialization:  user?.specialization  || '',
+    contact_number:  user?.contact_number  || '',
+    email:           user?.email           || '',
+    license_number:  user?.license_number  || '',
+  });
+
   const f = k => v => setDraft(p => ({ ...p, [k]: v }));
+
+  const handleSave = async () => {
+    setError('');
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setEdit(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Modal onClose={onClose} icon={User} iconBg="bg-gradient-to-r from-blue-600 to-indigo-700"
       title="Profile Information" subtitle="View and update your professional details." width="max-w-lg">
 
       <div className="grid grid-cols-2 gap-3">
+        <Field icon={User}      label="First Name"      value={draft.first_name}     editable={edit} onChange={f('first_name')} />
+        <Field icon={User}      label="Last Name"       value={draft.last_name}      editable={edit} onChange={f('last_name')} />
         <div className="col-span-2">
-          <Field icon={User}        label="Full Name"       value={draft.fullName}       editable={edit} onChange={f('fullName')} />
+          <Field icon={Stethoscope} label="Specialization" value={draft.specialization} editable={edit} onChange={f('specialization')} />
         </div>
-        <Field icon={Stethoscope}   label="Specialization"  value={draft.specialization} editable={edit} onChange={f('specialization')} />
-        <Field icon={Building2}     label="Department"      value={draft.department}     editable={edit} onChange={f('department')} />
-        <Field icon={MapPin}        label="Consultation Room" value={draft.room}          editable={edit} onChange={f('room')} />
-        <Field icon={Hash}          label="License No."     value={draft.licenseNo}      editable={false} note="view only" />
-        <Field icon={Phone}         label="Contact Number"  value={draft.contact}        editable={edit} onChange={f('contact')} />
-        <Field icon={Mail}          label="Email Address"   value={draft.email}          editable={edit} onChange={f('email')} type="email" />
+        <Field icon={Hash}      label="License No."     value={draft.license_number} editable={false} note="view only" />
+        <Field icon={Phone}     label="Contact Number"  value={draft.contact_number} editable={edit} onChange={f('contact_number')} />
         <div className="col-span-2">
-          <Field icon={FileText}    label="Professional Bio" value={draft.bio}           editable={edit} onChange={f('bio')} as="textarea" rows={3} />
+          <Field icon={Mail}    label="Email Address"   value={draft.email}          editable={edit} onChange={f('email')} type="email" />
         </div>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold">
+          <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" /> {error}
+        </div>
+      )}
+
       <div className="flex items-start gap-2.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
         <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-        <p>License number and department assignment can only be changed by an administrator.</p>
+        <p>License number and role can only be changed by an administrator.</p>
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
         {edit ? (
           <>
-            <button onClick={() => { onSave(draft); setEdit(false); }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm">
-              <Save className="w-3.5 h-3.5" /> Save Changes
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-60">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Save className="w-3.5 h-3.5" />}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
-            <button onClick={() => { setDraft(profile); setEdit(false); }}
+            <button onClick={() => { setDraft({ first_name: user?.first_name||'', last_name: user?.last_name||'', specialization: user?.specialization||'', contact_number: user?.contact_number||'', email: user?.email||'', license_number: user?.license_number||'' }); setEdit(false); setError(''); }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-50 transition-all">
               <X className="w-3.5 h-3.5" /> Cancel
             </button>
@@ -182,18 +246,32 @@ function ProfileModal({ profile, onSave, onClose }) {
 }
 
 /* — Password — */
-function PasswordModal({ onClose, onSuccess }) {
-  const [pwd, setPwd]     = useState({ current: '', newPwd: '', confirm: '' });
-  const [show, setShow]   = useState({ current: false, newPwd: false, confirm: false });
-  const [error, setError] = useState('');
+function PasswordModal({ userId, onClose, onSuccess }) {
+  const [pwd,     setPwd]     = useState({ current: '', newPwd: '', confirm: '' });
+  const [show,    setShow]    = useState({ current: false, newPwd: false, confirm: false });
+  const [error,   setError]   = useState('');
+  const [loading, setLoading] = useState(false);
   const f = k => v => setPwd(p => ({ ...p, [k]: v }));
 
-  const submit = () => {
+  const submit = async () => {
     setError('');
-    if (!pwd.current)               return setError('Enter your current password.');
-    if (pwd.newPwd.length < 8)      return setError('New password must be at least 8 characters.');
-    if (pwd.newPwd !== pwd.confirm)  return setError('Passwords do not match.');
-    onSuccess(); onClose();
+    if (!pwd.current)              return setError('Enter your current password.');
+    if (pwd.newPwd.length < 8)     return setError('New password must be at least 8 characters.');
+    if (pwd.newPwd !== pwd.confirm) return setError('Passwords do not match.');
+
+    setLoading(true);
+    try {
+      // Step 1: verify current password
+      await verifyPassword(pwd.current);
+      // Step 2: update to new password
+      await updatePassword(userId, { password: pwd.newPwd, password_confirmation: pwd.confirm });
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -232,26 +310,27 @@ function PasswordModal({ onClose, onSuccess }) {
       </div>
 
       <div className="pt-1 border-t border-gray-100">
-        <button onClick={submit}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm">
-          <Lock className="w-3.5 h-3.5" /> Update Password
+        <button onClick={submit} disabled={loading}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm disabled:opacity-60">
+          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Lock className="w-3.5 h-3.5" />}
+          {loading ? 'Updating...' : 'Update Password'}
         </button>
       </div>
     </Modal>
   );
 }
 
-/* — Notifications — */
+/* — Notifications (local state only — no backend endpoint) — */
 function NotifModal({ notif, onChange, onClose }) {
   return (
     <Modal onClose={onClose} icon={Bell} iconBg="bg-gradient-to-r from-amber-500 to-orange-500"
       title="Notification Preferences" subtitle="Control appointment and schedule alerts.">
       {[
-        { key: 'newAppointment',    label: 'New Appointment Booked',   desc: 'Get notified when a patient books an appointment with you.'     },
-        { key: 'cancellation',      label: 'Appointment Cancellation', desc: 'Alerts when a patient cancels their appointment.'               },
-        { key: 'reminder',          label: 'Daily Schedule Reminder',  desc: 'Receive a daily summary of your upcoming consultations.'        },
-        { key: 'patientArrival',    label: 'Patient Arrival Alert',    desc: 'Notified when your next patient has checked in at the queue.'   },
-        { key: 'systemAnnounce',    label: 'System Announcements',     desc: 'Clinic-wide announcements and system updates.'                  },
+        { key: 'newAppointment', label: 'New Appointment Booked',   desc: 'Get notified when a patient books an appointment with you.'   },
+        { key: 'cancellation',   label: 'Appointment Cancellation', desc: 'Alerts when a patient cancels their appointment.'             },
+        { key: 'reminder',       label: 'Daily Schedule Reminder',  desc: 'Receive a daily summary of your upcoming consultations.'      },
+        { key: 'patientArrival', label: 'Patient Arrival Alert',    desc: 'Notified when your next patient has checked in at the queue.' },
+        { key: 'systemAnnounce', label: 'System Announcements',     desc: 'Clinic-wide announcements and system updates.'                },
       ].map(({ key, label, desc }) => (
         <div key={key}
           className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-gray-50 hover:bg-white hover:border-gray-200 transition-all">
@@ -271,124 +350,12 @@ function NotifModal({ notif, onChange, onClose }) {
   );
 }
 
-/* — Interface — */
-function InterfaceModal({ theme, setTheme, language, setLanguage, onClose, onApply }) {
-  const [localTheme, setLocalTheme] = useState(theme);
-  const [localLang,  setLocalLang]  = useState(language);
 
-  return (
-    <Modal onClose={onClose} icon={Monitor} iconBg="bg-gradient-to-r from-violet-500 to-purple-700"
-      title="Interface Preferences" subtitle="Customize your display and language settings.">
 
-      <div>
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2.5">Theme Mode</p>
-        <div className="grid grid-cols-2 gap-2">
-          {[{ v: 'light', label: 'Light Mode', Icon: Sun }, { v: 'dark', label: 'Dark Mode', Icon: Moon }].map(({ v, label, Icon }) => (
-            <button key={v} onClick={() => setLocalTheme(v)}
-              className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border-2 text-sm font-bold transition-all
-                ${localTheme === v ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
-              <Icon className="w-4 h-4" /> {label}
-              {localTheme === v && <Check className="w-3.5 h-3.5 ml-auto" />}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      <div>
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2.5">Language</p>
-        <div className="relative">
-          <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          <select value={localLang} onChange={e => setLocalLang(e.target.value)}
-            className="w-full appearance-none pl-10 pr-8 py-2.5 text-sm font-bold border border-gray-200 rounded-xl bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer">
-            {['English', 'Filipino', 'Cebuano'].map(l => <option key={l}>{l}</option>)}
-          </select>
-          <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none rotate-90" />
-        </div>
-      </div>
-
-      <div className="pt-1 border-t border-gray-100 flex gap-2">
-        <button onClick={() => { setTheme(localTheme); setLanguage(localLang); onApply(); onClose(); }}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-sm">
-          <Check className="w-3.5 h-3.5" /> Apply Changes
-        </button>
-        <button onClick={onClose}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-50 transition-all">
-          Cancel
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-/* — Account Info — */
-function AccountModal({ profile, onClose }) {
-  return (
-    <Modal onClose={onClose} icon={Info} iconBg="bg-gradient-to-r from-cyan-500 to-blue-600"
-      title="Account Information" subtitle="Your system account details.">
-      {[
-        [Hash,        'Doctor ID',        MOCK_ACCOUNT.doctorId      ],
-        [Stethoscope, 'Specialization',   profile.specialization     ],
-        [Hash,        'License No.',      profile.licenseNo          ],
-        [Mail,        'Email Address',    profile.email              ],
-        [Calendar,    'Account Created',  MOCK_ACCOUNT.createdAt     ],
-        [Clock,       'Last Login',       MOCK_ACCOUNT.lastLogin     ],
-      ].map(([Icon, label, value]) => (
-        <div key={label} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
-          <div className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
-            <Icon className="w-3.5 h-3.5 text-gray-400" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-            <p className="text-sm font-semibold text-gray-800 mt-0.5">{value}</p>
-          </div>
-        </div>
-      ))}
-    </Modal>
-  );
-}
-
-/* — Logout / Account Actions — */
+/* — Logout — */
 function AccountActionsModal({ onClose, onLogout }) {
-  const [confirmLogout, setConfirmLogout] = useState(false);
-
-  return (
-    <Modal onClose={onClose} icon={LogOut} iconBg="bg-gradient-to-r from-red-500 to-rose-600"
-      title="Account Actions" subtitle="Manage your session.">
-
-      {!confirmLogout ? (
-        <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-2xl">
-          <div>
-            <p className="text-sm font-bold text-gray-800">Sign Out</p>
-            <p className="text-xs text-gray-400 mt-0.5">End your current session.</p>
-          </div>
-          <button onClick={() => setConfirmLogout(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all shadow-sm">
-            <LogOut className="w-3.5 h-3.5" /> Logout
-          </button>
-        </div>
-      ) : (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700 font-semibold">
-              Make sure you have completed all pending consultations before signing out.
-            </p>
-          </div>
-          <p className="text-sm font-bold text-red-800 text-center">Are you sure you want to sign out?</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setConfirmLogout(false)}
-              className="py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 transition-all">
-              Cancel
-            </button>
-            <button onClick={() => { onLogout(); onClose(); }}
-              className="py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all">
-              Yes, Sign Out
-            </button>
-          </div>
-        </div>
-      )}
-    </Modal>
-  );
+  return <LogoutConfirmModal open onConfirm={onLogout} onCancel={onClose} />;
 }
 
 /* ══════════════════════════════════════════════════
@@ -419,20 +386,80 @@ function SettingItem({ icon: Icon, iconBg, label, desc, badge, onClick, danger }
 /* ══════════════════════════════════════════════════
    MAIN PAGE
 ══════════════════════════════════════════════════ */
-
 export default function DoctorSettingsPage() {
-  const [profile,      setProfile]      = useState(INITIAL_PROFILE);
-  const [notif,        setNotif]        = useState({ newAppointment: true, cancellation: true, reminder: true, patientArrival: true, systemAnnounce: false });
-  const [theme,        setTheme]        = useState('light');
-  const [language,     setLanguage]     = useState('English');
-  const [modal,        setModal]        = useState(null);
-  const [toast,        setToast]        = useState(null);
+  const [user,     setUser]     = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [notif,    setNotif]    = useState({
+    newAppointment: true, cancellation: true,
+    reminder: true, patientArrival: true, systemAnnounce: false,
+  });
+  const [theme,    setTheme]    = useState('light');
+  const [language, setLanguage] = useState('English');
+  const [modal,    setModal]    = useState(null);
+  const [toast,    setToast]    = useState(null);
 
   const showToast = (msg, type = 'success') => setToast({ message: msg, type });
   const close     = () => setModal(null);
 
+  // ── Fetch logged-in user on mount ─────────────────
+  useEffect(() => {
+    setLoading(true);
+    fetchMe()
+      .then(data => { if (data?.user) setUser(data.user); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── Profile update ────────────────────────────────
+  const handleProfileSave = async (draft) => {
+    if (!user?.user_id) throw new Error('User not loaded.');
+    const updated = await updateProfile(user.user_id, {
+      first_name:     draft.first_name,
+      last_name:      draft.last_name,
+      specialization: draft.specialization,
+      contact_number: draft.contact_number,
+      email:          draft.email,
+      // license_number and role are admin-only — not sent
+    });
+    // Merge updated fields back — API returns the updated user object
+    setUser(prev => ({ ...prev, ...draft }));
+    showToast('Profile updated successfully.');
+  };
+
+  // ── Logout handler ────────────────────────────────
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+    } catch {
+      // Continue with local sign-out even if API logout fails.
+    }
+
+    localStorage.removeItem('auth_token');
+    sessionStorage.removeItem('auth_token');
+    setModal(null);
+    window.location.href = '/login';
+  };
+
+  const fullName = user ? `Dr. ${user.first_name} ${user.last_name}` : '—';
+  const initials = user
+    ? `${(user.first_name||'')[0]}${(user.last_name||'')[0]}`.toUpperCase()
+    : '??';
+
   const activeNotif = Object.values(notif).filter(Boolean).length;
-  const initials    = name => name.replace('Dr. ', '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+  // ── Loading skeleton ──────────────────────────────
+  if (loading) {
+    return (
+      <MainLayout title="Settings" subtitle="Manage your professional profile and preferences.">
+        <div className="flex items-center justify-center py-24">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin"/>
+            <p className="text-sm text-gray-400 font-medium">Loading your profile...</p>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout title="Settings" subtitle="Manage your professional profile and preferences.">
@@ -444,28 +471,32 @@ export default function DoctorSettingsPage() {
           <div className="absolute bottom-0 right-24 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
           <div className="relative flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-white/20 border-2 border-white/30 flex items-center justify-center text-lg font-black flex-shrink-0">
-              {initials(profile.fullName)}
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-black">{profile.fullName}</h2>
-              <p className="text-blue-200 text-sm">{profile.specialization} · {profile.department}</p>
+              <h2 className="text-xl font-black">{fullName}</h2>
+              <p className="text-blue-200 text-sm">
+                {user?.specialization || user?.role || '—'}
+                {user?.contact_number ? ` · ${user.contact_number}` : ''}
+              </p>
             </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 rounded-xl text-xs font-bold text-blue-100 flex-shrink-0">
-              <Stethoscope className="w-3.5 h-3.5" /> Doctor
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 rounded-xl text-xs font-bold text-blue-100 flex-shrink-0 capitalize">
+              <Stethoscope className="w-3.5 h-3.5" /> {user?.role || 'Doctor'}
             </div>
           </div>
 
           {/* Quick stats */}
           <div className="relative flex items-center gap-5 mt-4 pt-4 border-t border-white/10">
             {[
-              { label: 'Doctor ID',   value: MOCK_ACCOUNT.doctorId  },
-              { label: 'License No.', value: profile.licenseNo      },
+              { label: 'User ID',     value: user?.user_id        || '—' },
+              { label: 'License No.', value: user?.license_number || '—' },
+              { label: 'Email',       value: user?.email          || '—' },
             ].map((s, i) => (
               <React.Fragment key={s.label}>
                 {i > 0 && <div className="w-px h-6 bg-white/20" />}
-                <div>
+                <div className="min-w-0">
                   <p className="text-blue-300 text-[10px] font-bold uppercase tracking-wide">{s.label}</p>
-                  <p className="text-white text-sm font-black">{s.value}</p>
+                  <p className="text-white text-sm font-black truncate">{s.value}</p>
                 </div>
               </React.Fragment>
             ))}
@@ -475,19 +506,15 @@ export default function DoctorSettingsPage() {
         {/* ══ SETTINGS MENU ══ */}
         <div className="space-y-2">
 
-          {/* Professional */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pb-1">Professional</p>
-
           <SettingItem
             icon={User} iconBg="bg-blue-600"
             label="Profile Information"
-            desc={`${profile.fullName} · ${profile.specialization} · ${profile.room}`}
+            desc={user ? `${fullName} · ${user.specialization || user.role || '—'}` : 'Loading...'}
             onClick={() => setModal('profile')}
           />
 
-          {/* Account */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Account</p>
-
           <SettingItem
             icon={Lock} iconBg="bg-slate-700"
             label="Change Password"
@@ -495,9 +522,7 @@ export default function DoctorSettingsPage() {
             onClick={() => setModal('password')}
           />
 
-          {/* Preferences */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Preferences</p>
-
           <SettingItem
             icon={Bell} iconBg="bg-amber-500"
             label="Notification Preferences"
@@ -505,22 +530,8 @@ export default function DoctorSettingsPage() {
             badge={`${activeNotif} active`}
             onClick={() => setModal('notif')}
           />
-          <SettingItem
-            icon={Monitor} iconBg="bg-violet-600"
-            label="Interface Preferences"
-            desc={`${theme === 'light' ? 'Light Mode' : 'Dark Mode'} · ${language}`}
-            onClick={() => setModal('interface')}
-          />
 
-          {/* Session */}
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Session</p>
-
-          <SettingItem
-            icon={Info} iconBg="bg-cyan-500"
-            label="Account Information"
-            desc={`${MOCK_ACCOUNT.doctorId} · Last login: ${MOCK_ACCOUNT.lastLogin}`}
-            onClick={() => setModal('account')}
-          />
           <SettingItem
             icon={LogOut} iconBg="bg-red-100"
             label="Sign Out"
@@ -535,13 +546,14 @@ export default function DoctorSettingsPage() {
       {/* ══ MODALS ══ */}
       {modal === 'profile' && (
         <ProfileModal
-          profile={profile}
-          onSave={p => { setProfile(p); showToast('Profile updated successfully.'); close(); }}
+          user={user}
+          onSave={handleProfileSave}
           onClose={close}
         />
       )}
       {modal === 'password' && (
         <PasswordModal
+          userId={user?.user_id}
           onClose={close}
           onSuccess={() => showToast('Password updated successfully.')}
         />
@@ -553,21 +565,13 @@ export default function DoctorSettingsPage() {
           onClose={close}
         />
       )}
-      {modal === 'interface' && (
-        <InterfaceModal
-          theme={theme} setTheme={setTheme}
-          language={language} setLanguage={setLanguage}
-          onApply={() => showToast('Interface preferences applied.')}
-          onClose={close}
-        />
-      )}
       {modal === 'account' && (
-        <AccountModal profile={profile} onClose={close} />
+        <AccountModal user={user} onClose={close} />
       )}
       {modal === 'actions' && (
         <AccountActionsModal
           onClose={close}
-          onLogout={() => showToast('You have been signed out.')}
+          onLogout={handleLogout}
         />
       )}
 
@@ -575,3 +579,4 @@ export default function DoctorSettingsPage() {
     </MainLayout>
   );
 }
+

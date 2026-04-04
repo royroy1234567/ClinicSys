@@ -136,203 +136,11 @@ const Pagination = ({ page, totalPages, total, onPage }) => {
   );
 };
 
-/* ═══════════════════════════════════════
-   EDIT MODAL (no add, no priority flags)
-═══════════════════════════════════════ */
-const EMPTY_FORM = {
-  patient_id: '', doctor_id: '', date: TODAY, start_time: '', end_time: '',
-  duration: '30', appointment_type: 'General Consultation',
-  status: 'scheduled', reason: '',
-};
-
-function AppointmentModal({ mode, appointment, appointments, patients, doctors, onClose, onSave, saving }) {
-  const isEdit = mode === 'edit';
-  const [form, setForm] = useState(() => {
-    if (!isEdit) return { ...EMPTY_FORM };
-    let dur = '30';
-    if (appointment?.start_time && appointment?.end_time) {
-      const [sh, sm] = appointment.start_time.split(':').map(Number);
-      const [eh, em] = appointment.end_time.split(':').map(Number);
-      dur = String(eh * 60 + em - sh * 60 - sm);
-    }
-    return {
-      patient_id: String(appointment?.patient_id || ''),
-      doctor_id: String(appointment?.doctor_id || ''),
-      date: appointment?.date || TODAY,
-      start_time: appointment?.start_time || '',
-      end_time: appointment?.end_time || '',
-      duration: dur,
-      appointment_type: appointment?.appointment_type || 'General Consultation',
-      status: appointment?.status || 'scheduled',
-      reason: appointment?.reason || '',
-    };
-  });
-  const [errors, setErrors] = useState({});
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
-
-  const suggestedDoctor = useMemo(
-    () => getShortestQueueDoctor(doctors, appointments),
-    [doctors, appointments]
-  );
-
-  const calcEnd = (start, dur) => {
-    if (!start || !dur) return '';
-    const [h, m] = start.split(':').map(Number);
-    const total = h * 60 + m + parseInt(dur);
-    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-  };
-
-  const handleStartChange = v => {
-    setForm(f => ({ ...f, start_time: v, end_time: calcEnd(v, f.duration) }));
-    setErrors(e => ({ ...e, start_time: '' }));
-  };
-  const handleDurChange = v => {
-    setForm(f => ({ ...f, duration: v, end_time: calcEnd(f.start_time, v) }));
-  };
-
-  const validate = () => {
-    const e = {};
-    if (!form.patient_id) e.patient_id = 'Select a patient';
-    if (!form.doctor_id)  e.doctor_id  = 'Select a doctor';
-    if (!form.date)       e.date       = 'Date required';
-    if (!form.start_time) e.start_time = 'Start time required';
-    const end = calcEnd(form.start_time, form.duration);
-    const conflict = appointments.find(a => {
-      if (isEdit && String(a.id) === String(appointment?.id)) return false;
-      if (a.date !== form.date || String(a.doctor_id) !== form.doctor_id) return false;
-      if (['cancelled', 'no_show'].includes(a.status)) return false;
-      return a.start_time < end && a.end_time > form.start_time;
-    });
-    if (conflict) e.start_time = `Conflict with appt at ${fmtTime(conflict.start_time)}`;
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSave = () => {
-    if (!validate()) return;
-    onSave({ ...form, end_time: calcEnd(form.start_time, form.duration) });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Edit Appointment</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{appointment?.id}</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          <FieldRow label="Patient" required>
-            <SelectBox
-              value={form.patient_id} onChange={v => set('patient_id', v)}
-              placeholder="Select patient..."
-              options={patients.map(p => ({ value: String(p.id), label: p.name }))}
-            />
-            {errors.patient_id && <p className="text-xs text-red-500">⚠ {errors.patient_id}</p>}
-          </FieldRow>
-
-          <FieldRow
-            label="Doctor" required
-            hint={suggestedDoctor && !form.doctor_id ? `💡 Suggested: ${suggestedDoctor.name} has the shortest queue` : ''}
-          >
-            <SelectBox
-              value={form.doctor_id} onChange={v => set('doctor_id', v)}
-              placeholder="Select doctor..."
-              options={doctors.map(d => {
-                const load = appointments.filter(a =>
-                  String(a.doctor_id) === String(d.id) &&
-                  ['scheduled', 'called', 'ongoing'].includes(a.status)
-                ).length;
-                return {
-                  value: String(d.id),
-                  label: `${d.name}${d.specialization ? ' — ' + d.specialization : ''} (${load} queued)`,
-                };
-              })}
-            />
-            {errors.doctor_id && <p className="text-xs text-red-500">⚠ {errors.doctor_id}</p>}
-          </FieldRow>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Date" required>
-              <input type="date" value={form.date} onChange={e => set('date', e.target.value)} className={inputCls} />
-              {errors.date && <p className="text-xs text-red-500">⚠ {errors.date}</p>}
-            </FieldRow>
-            <FieldRow label="Start Time" required>
-              <input type="time" value={form.start_time} onChange={e => handleStartChange(e.target.value)} className={inputCls} />
-              {errors.start_time && <p className="text-xs text-red-500">⚠ {errors.start_time}</p>}
-            </FieldRow>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Duration">
-              <SelectBox value={form.duration} onChange={handleDurChange}
-                options={[
-                  { value: '15', label: '15 min' }, { value: '30', label: '30 min' },
-                  { value: '45', label: '45 min' }, { value: '60', label: '1 hour' },
-                  { value: '90', label: '1.5 hrs' }, { value: '120', label: '2 hours' },
-                ]}
-              />
-            </FieldRow>
-            <FieldRow label="Appointment Type">
-              <SelectBox value={form.appointment_type} onChange={v => set('appointment_type', v)}
-                options={[
-                  { value: 'General Consultation',    label: 'General Consultation' },
-                  { value: 'Follow-up',               label: 'Follow-up' },
-                  { value: 'Specialist Consultation', label: 'Specialist Consultation' },
-                  { value: 'Pediatric Consult',       label: 'Pediatric Consult' },
-                  { value: 'Executive Check-up',      label: 'Executive Check-up' },
-                  { value: 'Walk-in',                 label: 'Walk-in' },
-                ]}
-              />
-            </FieldRow>
-          </div>
-
-          {form.start_time && form.duration && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-500 flex-shrink-0" />
-              <p className="text-xs text-blue-700 font-medium">
-                {fmtTime(form.start_time)} → {fmtTime(calcEnd(form.start_time, form.duration))} ({form.duration} min)
-              </p>
-            </div>
-          )}
-
-          <FieldRow label="Status">
-            <SelectBox value={form.status} onChange={v => set('status', v)}
-              options={Object.entries(STATUS_CFG).map(([k, v]) => ({ value: k, label: v.label }))} />
-          </FieldRow>
-
-          <FieldRow label="Reason / Remarks">
-            <textarea value={form.reason} onChange={e => set('reason', e.target.value)}
-              placeholder="Reason for visit or additional notes..." rows={3} className={`${inputCls} resize-none`} />
-          </FieldRow>
-        </div>
-
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-          <button onClick={() => { setForm({ ...EMPTY_FORM }); setErrors({}); }}
-            className="text-sm text-gray-400 hover:text-gray-600 font-medium flex items-center gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" /> Reset
-          </button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {saving
-                ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Saving...</>
-                : <><Check className="w-4 h-4 mr-1.5" /> Save Changes</>}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════
    VIEW MODAL
 ═══════════════════════════════════════ */
-function ViewModal({ appointment, patients, doctors, onClose, onEdit }) {
+function ViewModal({ appointment, patients, doctors, onClose,  }) {
   const patient = patients.find(p => String(p.id) === String(appointment.patient_id));
   const doctor  = doctors.find(d => String(d.id) === String(appointment.doctor_id));
   return (
@@ -341,12 +149,10 @@ function ViewModal({ appointment, patients, doctors, onClose, onEdit }) {
         <div className="flex items-center justify-between p-6 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Appointment Details</h2>
-            <p className="text-xs text-gray-400 mt-0.5 font-mono">{appointment.id}</p>
+            
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => { onClose(); onEdit(appointment); }}>
-              <Edit className="w-3.5 h-3.5 mr-1" /> Edit
-            </Button>
+    
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
           </div>
         </div>
@@ -712,15 +518,9 @@ const AppointmentsPage = () => {
                             </td>
                             <td className="py-2.5 px-3">
                               <div className="flex items-center gap-1">
-                                <button onClick={() => setModal({ mode: 'view', appointment: apt })} title="View" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-colors"><Eye className="w-3.5 h-3.5" /></button>
-                                <button onClick={() => setModal({ mode: 'edit', appointment: apt })} title="Edit" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300 transition-colors"><Edit className="w-3.5 h-3.5" /></button>
-                                {apt.status === 'scheduled' && <button onClick={() => handleStatusUpdate(apt.id, 'called')} title="Call Patient" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-purple-600 hover:border-purple-300 transition-colors" data-testid={`call-appointment-${apt.id}`}><BellRing className="w-3.5 h-3.5" /></button>}
-                                {apt.status === 'called'    && <button onClick={() => handleStatusUpdate(apt.id, 'ongoing')} title="Start Consult" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-yellow-600 hover:border-yellow-300 transition-colors" data-testid={`start-appointment-${apt.id}`}><PlayCircle className="w-3.5 h-3.5" /></button>}
-                                {apt.status === 'ongoing'   && <button onClick={() => handleStatusUpdate(apt.id, 'completed')} title="Complete" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-green-600 hover:border-green-300 transition-colors" data-testid={`complete-appointment-${apt.id}`}><CheckSquare className="w-3.5 h-3.5" /></button>}
-                                {['scheduled','called','ongoing'].includes(apt.status) && <button onClick={() => handleStatusUpdate(apt.id, 'cancelled')} title="Cancel" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-300 transition-colors"><XCircle className="w-3.5 h-3.5" /></button>}
-                                {apt.status === 'scheduled' && <button onClick={() => handleStatusUpdate(apt.id, 'no_show')} title="No-show" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-colors"><UserX className="w-3.5 h-3.5" /></button>}
-                                <button onClick={() => setModal({ mode: 'delete', appointment: apt })} title="Delete" className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-300 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
-                              </div>
+                                <button onClick={() => setModal({ mode: 'view', appointment: apt })} title="View"  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all">
+<Eye className="w-3.5 h-3.5" />View</button>
+                               </div>
                             </td>
                           </tr>
                         );
@@ -916,10 +716,7 @@ const AppointmentsPage = () => {
       </div>
 
       {/* MODALS */}
-      {modal?.mode === 'edit' && (
-        <AppointmentModal mode="edit" appointment={modal.appointment} appointments={appointments}
-          patients={patients} doctors={doctors} onClose={() => setModal(null)} onSave={handleSave} saving={saving} />
-      )}
+
       {modal?.mode === 'view' && (
         <ViewModal appointment={modal.appointment} patients={patients} doctors={doctors}
           onClose={() => setModal(null)} onEdit={apt => setModal({ mode: 'edit', appointment: apt })} />

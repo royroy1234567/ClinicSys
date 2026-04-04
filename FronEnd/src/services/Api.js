@@ -31,6 +31,7 @@ const mapDoctor = (u) => ({
   name:           `Dr. ${u.first_name} ${u.last_name}`,
   specialization: u.specialization || 'General',
   status:         u.status?.toLowerCase() === 'active' ? 'active' : 'inactive',
+  availability_status: (u.availability_status || 'unavailable').toLowerCase(),
   email:          u.email,
   phone:          u.contact_number,
 });
@@ -73,6 +74,13 @@ export const api = {
       const found = rows.find(p => String(p.id) === String(id));
       if (!found) throw new Error('Patient not found');
       return found;
+    },
+    getProfile: async () => {
+      const res = await fetch(`${API_BASE}/patient/profile`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch patient profile');
+      return res.json();
     },
     create: async (data) => {
       const res = await fetch(`${API_BASE}/patients/register`, {
@@ -143,10 +151,33 @@ export const api = {
       const u = await res.json();
       return mapDoctor(u);
     },
+    getAvailability: async (id) => {
+      const res = await fetch(`${API_BASE}/users/${id}/availability`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch doctor availability');
+      return res.json();
+    },
+    updateAvailability: async (id, availability_status) => {
+      const res = await fetch(`${API_BASE}/users/${id}/availability`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ availability_status }),
+      });
+      if (!res.ok) throw new Error('Failed to update doctor availability');
+      return res.json();
+    },
   },
 
   // ── Appointments (mock) ───────────────────────────────────────
   appointments: {
+    getMine: async () => {
+      const res = await fetch(`${API_BASE}/appointments`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch appointments');
+      return res.json();
+    },
     getAll: async (filters = {}) => {
       await delay();
       let result = [...appointments];
@@ -189,12 +220,48 @@ export const api = {
 
   // ── Consultations (mock) ──────────────────────────────────────
   consultations: {
+    getByQueueEntry: async (queueEntryId) => {
+      const res = await fetch(`${API_BASE}/consultations/queue-entry/${queueEntryId}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch consultation');
+      return res.json();
+    },
+    saveByQueueEntry: async (queueEntryId, payload) => {
+      const res = await fetch(`${API_BASE}/consultations/queue-entry/${queueEntryId}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to save consultation');
+      return res.json();
+    },
     getAll: async (filters = {}) => {
-      await delay();
-      let result = [...consultations];
-      if (filters.patient_id) result = result.filter(c => c.patient_id === filters.patient_id);
-      if (filters.doctor_id)  result = result.filter(c => c.doctor_id  === filters.doctor_id);
-      return result;
+      const params = new URLSearchParams();
+      if (filters.patient_id) params.set('patient_id', String(filters.patient_id));
+      if (filters.doctor_id) params.set('doctor_id', String(filters.doctor_id));
+      if (filters.status) params.set('status', String(filters.status));
+      if (filters.from) params.set('from', String(filters.from));
+      if (filters.to) params.set('to', String(filters.to));
+
+      const query = params.toString();
+      const res = await fetch(`${API_BASE}/consultations${query ? `?${query}` : ''}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch consultations');
+      return res.json();
+    },
+    rate: async (consultationId, payload) => {
+      const res = await fetch(`${API_BASE}/consultations/${consultationId}/rate`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to submit rating');
+      }
+      return res.json();
     },
     create: async (data) => {
       await delay();
@@ -254,6 +321,16 @@ export const api = {
     },
   },
 
+  manager: {
+    getDashboardAnalytics: async (range = 'monthly') => {
+      const res = await fetch(`${API_BASE}/manager/analytics/dashboard?range=${encodeURIComponent(range)}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch manager analytics');
+      return res.json();
+    },
+  },
+
 
   
   // ── Activity Logs (mock) ──────────────────────────────────────
@@ -261,6 +338,31 @@ export const api = {
     getAll: async () => {
       await delay();
       return activityLogs.slice(0, 100);
+    },
+  },
+
+  servics: {
+    getAll: async (filters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.status) params.set('status', String(filters.status));
+      if (filters.category) params.set('category', String(filters.category));
+      if (filters.search) params.set('search', String(filters.search));
+      const query = params.toString();
+      const res = await fetch(`${API_BASE}/servics${query ? `?${query}` : ''}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch services');
+      return res.json();
+    },
+  },
+
+  transactions: {
+    getById: async (transactionId) => {
+      const res = await fetch(`${API_BASE}/transactions/${transactionId}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch transaction receipt');
+      return res.json();
     },
   },
 
@@ -279,6 +381,15 @@ queue: {
   updateStatus: async (id, status) => {
     const res = await fetch(`${API_BASE}/queue-entries/${id}/status`, { method:'PATCH', headers: authHeaders(), body: JSON.stringify({ status }) });
     if (!res.ok) throw new Error('Failed to update status');
+    return res.json();
+  },
+  assignDoctor: async (id, doctor_id) => {
+    const res = await fetch(`${API_BASE}/queue-entries/${id}/assign-doctor`, {
+      method:'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ doctor_id }),
+    });
+    if (!res.ok) throw new Error('Failed to assign doctor');
     return res.json();
   },
   checkInAppointment: async (appointmentId) => {

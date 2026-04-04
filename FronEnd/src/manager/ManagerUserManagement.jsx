@@ -423,11 +423,11 @@ export default function UserManagementPage() {
                           {user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}
                         </td>
                         <td className="py-3 px-4">
-                          <Button size="sm" variant="outline"
-                            className="h-7 px-3 text-xs gap-1.5 border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-400"
+                          <button size="sm" variant="outline"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all"
                             onClick={() => setViewUser(user)}>
                             <Eye className="w-3.5 h-3.5" /> View
-                          </Button>
+                          </button>
                         </td>
                       </tr>
                     );

@@ -1,19 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@/context/AuthContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell, Search, ChevronDown, X, Menu,
   PanelLeftClose, PanelLeftOpen,
   UserCircle, Settings, LogOut, AlertTriangle,
 } from 'lucide-react';
-
-const DEMO_NOTIFICATIONS = [
-  { id: 1, type: 'appt',     title: 'New appointment booked',          time: '2 min ago',  read: false },
-  { id: 2, type: 'followup', title: 'Follow-up overdue: Maria Santos', time: '15 min ago', read: false },
-  { id: 3, type: 'patient',  title: 'New patient registered',          time: '1 hr ago',   read: false },
-  { id: 4, type: 'system',   title: 'System backup completed',         time: '3 hrs ago',  read: true  },
-];
 
 /* ══════════════════════════════════════════════════
    LOGOUT CONFIRMATION MODAL
@@ -191,13 +185,10 @@ function UserDropdown({ user, roleGradient, roleLabels, onLogoutClick }) {
 ══════════════════════════════════════════════════ */
 const DashboardHeader = ({ title, subtitle, collapsed, onToggle, onMenuClick }) => {
   const { user, logout } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllRead, loading: notificationsLoading } = useNotifications();
   const navigate = useNavigate();
   const [showNotif, setShowNotif]         = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [notifs, setNotifs]               = useState(DEMO_NOTIFICATIONS);
-  const unread = notifs.filter(n => !n.read).length;
-
-  const markAllRead = () => setNotifs(n => n.map(x => ({ ...x, read: true })));
 
   const handleLogoutConfirm = () => {
     setShowLogoutModal(false);
@@ -278,9 +269,9 @@ const DashboardHeader = ({ title, subtitle, collapsed, onToggle, onMenuClick }) 
                 className="relative w-9 h-9 rounded-xl bg-white border border-blue-100 shadow-sm flex items-center justify-center text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
               >
                 <Bell className="w-4 h-4" />
-                {unread > 0 && (
+                {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow">
-                    {unread}
+                    {unreadCount}
                   </span>
                 )}
               </button>
@@ -290,7 +281,7 @@ const DashboardHeader = ({ title, subtitle, collapsed, onToggle, onMenuClick }) 
                   <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
                     <p className="text-sm font-black text-gray-800">Notifications</p>
                     <div className="flex items-center gap-2">
-                      {unread > 0 && (
+                      {unreadCount > 0 && (
                         <button onClick={markAllRead} className="text-xs text-blue-500 font-semibold hover:text-blue-700">
                           Mark all read
                         </button>
@@ -301,11 +292,27 @@ const DashboardHeader = ({ title, subtitle, collapsed, onToggle, onMenuClick }) 
                     </div>
                   </div>
                   <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
-                    {notifs.map(n => (
+                    {!notificationsLoading && notifications.length === 0 && (
+                      <div className="px-4 py-5 text-center text-xs text-gray-500">
+                        No notifications right now.
+                      </div>
+                    )}
+                    {notificationsLoading && (
+                      <div className="px-4 py-5 text-center text-xs text-gray-500">
+                        Checking notifications...
+                      </div>
+                    )}
+                    {notifications.map(n => (
                       <div
                         key={n.id}
                         className={`px-4 py-3 flex items-start gap-3 hover:bg-blue-50/50 transition-colors cursor-pointer ${!n.read ? 'bg-blue-50/30' : ''}`}
-                        onClick={() => setNotifs(ns => ns.map(x => x.id === n.id ? { ...x, read: true } : x))}
+                        onClick={() => {
+                          markAsRead(n.id);
+                          if (n.route) {
+                            navigate(n.route);
+                            setShowNotif(false);
+                          }
+                        }}
                       >
                         <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.read ? 'bg-blue-500' : 'bg-gray-200'}`} />
                         <div>

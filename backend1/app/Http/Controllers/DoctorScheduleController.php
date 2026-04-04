@@ -20,8 +20,17 @@ class DoctorScheduleController extends Controller
             'user_id' => 'required|integer|exists:clinic_users,user_id',
         ]);
 
+        $today = now()->toDateString();
+
+        DB::transaction(function () use ($request, $today) {
+            DoctorSchedule::where('user_id', $request->user_id)
+                ->whereDate('schedule_date', '<', $today)
+                ->delete();
+        });
+
         $schedules = DoctorSchedule::with('slots')
             ->where('user_id', $request->user_id)
+            ->whereDate('schedule_date', '>=', $today)
             ->get();
 
         $result = [];
@@ -41,7 +50,7 @@ class DoctorScheduleController extends Controller
     {
         $request->validate([
             'user_id'          => 'required|integer|exists:clinic_users,user_id',
-            'schedule_date'    => 'required|date_format:Y-m-d',
+            'schedule_date'    => 'required|date_format:Y-m-d|after_or_equal:today',
             'repeat'           => 'boolean',
             'repeat_weeks'     => 'integer|min:1|max:52',
             'slots'            => 'nullable|array',

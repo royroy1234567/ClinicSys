@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Models\Servics;
 
 class queue_entries extends Model
 {
@@ -14,6 +15,7 @@ class queue_entries extends Model
         'appointment_id',
         'patient_id',
         'doctor_id',
+        'service_id',
         'queue_date',
         'queue_number',
         'source',
@@ -45,5 +47,10 @@ class queue_entries extends Model
     public function appointment(): BelongsTo
     {
         return $this->belongsTo(Appointment::class, 'appointment_id', 'appointment_id');
+    }
+
+    public function service(): BelongsTo
+    {
+        return $this->belongsTo(Servics::class, 'service_id', 'service_id');
     }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -10,137 +10,8 @@ import {
   ArrowUpRight, Check, CalendarClock, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
-
-/* ═══════════════════════════════════════════════════
-   DEMO DATA
-═══════════════════════════════════════════════════ */
-const PATIENTS = [
-  {
-    id: 'PT-0001', name: 'John Doe',        age: 45, gender: 'Male',   contact: '+63 912 111 0001',
-    email: 'john.doe@email.com',             address: '123 Rizal St., Quezon City',
-    type: 'Chronic',  totalVisits: 18, lastVisit: '2026-03-04', followUp: true,  nextFollowUp: '2026-03-18',
-    allergies: ['Penicillin', 'Aspirin'],
-    conditions: ['Hypertension Stage 2', 'Type 2 Diabetes'],
-    medicalNotes: 'Patient has been compliant with medication. BP fluctuates during stress periods. Advised to continue low-sodium diet and regular aerobic exercise.',
-    visits: [
-      { date: '2026-03-04', diagnosis: 'Hypertension monitoring',   prescription: 'Amlodipine 5mg OD',        notes: 'BP 140/90. Adjusted dosage.',              doctor: 'Dr. Sarah Smith' },
-      { date: '2026-02-05', diagnosis: 'Diabetes follow-up',         prescription: 'Metformin 500mg BID',       notes: 'HbA1c 7.2%. Stable.',                     doctor: 'Dr. Sarah Smith' },
-      { date: '2026-01-08', diagnosis: 'Hypertension + DM check',    prescription: 'Amlodipine 5mg + Metformin',notes: 'Both conditions stable.',                  doctor: 'Dr. Sarah Smith' },
-      { date: '2025-12-10', diagnosis: 'Annual physical exam',        prescription: 'Continue current meds',     notes: 'ECG normal. Labs within acceptable range.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-11-03', diagnosis: 'BP spike',                   prescription: 'Amlodipine 10mg OD',        notes: 'Emergency consult. Stress-related.',        doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0002', name: 'Jane Smith',       age: 32, gender: 'Female', contact: '+63 912 111 0002',
-    email: 'jane.smith@email.com',           address: '45 Mabini Ave., Makati City',
-    type: 'Chronic',  totalVisits: 12, lastVisit: '2026-03-04', followUp: true,  nextFollowUp: '2026-06-04',
-    allergies: ['Sulfa drugs'],
-    conditions: ['Type 2 Diabetes'],
-    medicalNotes: 'Well-controlled T2DM. Patient is very adherent. Encourage continued lifestyle modifications.',
-    visits: [
-      { date: '2026-03-04', diagnosis: 'Diabetes follow-up',   prescription: 'Metformin 500mg BID', notes: 'HbA1c 6.8%. Excellent control.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-12-03', diagnosis: 'Diabetes check',       prescription: 'Metformin 500mg BID', notes: 'HbA1c 7.0%. Continue current.',  doctor: 'Dr. Sarah Smith' },
-      { date: '2025-09-10', diagnosis: 'Diabetes management',  prescription: 'Metformin 500mg BID', notes: 'Diet counseling given.',          doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0003', name: 'Robert Johnson',   age: 58, gender: 'Male',   contact: '+63 912 111 0003',
-    email: 'r.johnson@email.com',            address: '78 Luna Rd., Pasig City',
-    type: 'Regular',  totalVisits: 5,  lastVisit: '2026-03-03', followUp: false, nextFollowUp: null,
-    allergies: [],
-    conditions: ['Chest pain (under evaluation)'],
-    medicalNotes: 'Presenting with intermittent chest pain. Ruled out ACS. Further cardiac workup pending.',
-    visits: [
-      { date: '2026-03-03', diagnosis: 'Chest pain evaluation', prescription: 'Nitroglycerin PRN', notes: 'ECG done. Referred to cardiology.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-11-20', diagnosis: 'Upper respiratory infection', prescription: 'Amoxicillin 500mg', notes: 'Resolved in 7 days.', doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0004', name: 'Maria Santos',     age: 27, gender: 'Female', contact: '+63 912 111 0004',
-    email: 'maria.santos@email.com',         address: '9 Bonifacio St., Taguig',
-    type: 'VIP',      totalVisits: 8,  lastVisit: '2026-02-20', followUp: true,  nextFollowUp: '2026-03-06',
-    allergies: ['Latex'],
-    conditions: ['Asthma (mild persistent)'],
-    medicalNotes: 'Asthma well-controlled with current inhaler regimen. Avoid known triggers: cold air, dust.',
-    visits: [
-      { date: '2026-02-20', diagnosis: 'Asthma follow-up',     prescription: 'Salbutamol MDI PRN + Fluticasone', notes: 'Peak flow 85% predicted.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-12-15', diagnosis: 'Asthma exacerbation',  prescription: 'Salbutamol nebulization',           notes: 'Triggered by dust exposure.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-10-02', diagnosis: 'Routine check',        prescription: 'Continue inhalers',                 notes: 'Stable. No exacerbations.',   doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0005', name: 'Carlos Reyes',     age: 61, gender: 'Male',   contact: '+63 912 111 0005',
-    email: 'carlos.reyes@email.com',         address: '22 Aguinaldo Blvd., Cavite',
-    type: 'Regular',  totalVisits: 3,  lastVisit: '2026-03-03', followUp: false, nextFollowUp: null,
-    allergies: ['NSAIDs'],
-    conditions: ['Recurrent upper respiratory infections'],
-    medicalNotes: 'Frequent URIs, likely due to occupational exposure. Recommended to use N95 mask at work.',
-    visits: [
-      { date: '2026-03-03', diagnosis: 'Upper resp. infection', prescription: 'Amoxicillin 500mg TID x7d', notes: 'Rest and fluids advised.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-10-14', diagnosis: 'URI',                   prescription: 'Cetirizine + Guaifenesin',  notes: 'Mild. OTC meds sufficient.', doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0006', name: 'Ana Cruz',         age: 39, gender: 'Female', contact: '+63 912 111 0006',
-    email: 'ana.cruz@email.com',             address: '56 Del Pilar St., Manila',
-    type: 'Chronic',  totalVisits: 22, lastVisit: '2026-02-10', followUp: true,  nextFollowUp: '2026-03-10',
-    allergies: ['Codeine'],
-    conditions: ['Type 2 Diabetes', 'Hypertension Stage 1'],
-    medicalNotes: 'Dual diagnosis management. BP and blood sugar both trending towards target ranges.',
-    visits: [
-      { date: '2026-02-10', diagnosis: 'DM + HTN monitoring', prescription: 'Metformin + Losartan 50mg', notes: 'BP 130/85. Sugar 7.0 mmol/L.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-11-08', diagnosis: 'Chronic disease check', prescription: 'Same regimen',            notes: 'Labs reviewed. Stable.',        doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0007', name: 'Ben Torres',       age: 52, gender: 'Male',   contact: '+63 912 111 0007',
-    email: 'ben.torres@email.com',           address: '101 Katipunan Ave., QC',
-    type: 'Chronic',  totalVisits: 15, lastVisit: '2026-01-28', followUp: true,  nextFollowUp: '2026-03-05',
-    allergies: [],
-    conditions: ['Hypertension Stage 1'],
-    medicalNotes: 'BP remains moderately elevated. Sodium restriction and exercise counseling ongoing.',
-    visits: [
-      { date: '2026-01-28', diagnosis: 'HTN follow-up', prescription: 'Losartan 100mg OD', notes: 'BP 145/92. Increased dosage.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-10-30', diagnosis: 'HTN check',     prescription: 'Losartan 50mg OD',  notes: 'BP 138/88. Continue.',         doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0008', name: 'Carla Mendoza',    age: 44, gender: 'Female', contact: '+63 912 111 0008',
-    email: 'carla.mendoza@email.com',        address: '33 Maysilo Circle, Mandaluyong',
-    type: 'Regular',  totalVisits: 6,  lastVisit: '2026-03-03', followUp: true,  nextFollowUp: '2026-03-10',
-    allergies: ['Dust mites'],
-    conditions: ['Asthma (moderate)'],
-    medicalNotes: 'Had recent exacerbation. Compliance improved after counseling. Use spacer with MDI.',
-    visits: [
-      { date: '2026-03-03', diagnosis: 'Asthma exacerbation', prescription: 'Salbutamol MDI + Prednisone 5d', notes: 'Nebulization done.',     doctor: 'Dr. Sarah Smith' },
-      { date: '2025-12-01', diagnosis: 'Asthma follow-up',    prescription: 'Fluticasone inhaler',            notes: 'Stable. No attacks.',    doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0009', name: 'David Lim',        age: 36, gender: 'Male',   contact: '+63 912 111 0009',
-    email: 'david.lim@email.com',            address: '77 Ortigas Ave., Pasig',
-    type: 'VIP',      totalVisits: 9,  lastVisit: '2026-03-02', followUp: true,  nextFollowUp: '2026-03-09',
-    allergies: [],
-    conditions: ['GERD'],
-    medicalNotes: 'Dietary triggers identified: coffee, spicy food, late meals. Patient counseled.',
-    visits: [
-      { date: '2026-03-02', diagnosis: 'GERD',          prescription: 'Omeprazole 20mg OD',  notes: 'Dietary modification advised.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-11-15', diagnosis: 'GERD follow-up', prescription: 'Omeprazole 20mg OD', notes: 'Symptoms reduced 60%.',         doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-  {
-    id: 'PT-0010', name: 'Elena Ramos',      age: 29, gender: 'Female', contact: '+63 912 111 0010',
-    email: 'elena.ramos@email.com',          address: '15 Marcos Highway, Antipolo',
-    type: 'Regular',  totalVisits: 4,  lastVisit: '2026-02-25', followUp: false, nextFollowUp: null,
-    allergies: ['Morphine'],
-    conditions: ['Migraine with aura'],
-    medicalNotes: 'Migraine triggers: stress, lack of sleep, bright lights. Prescribed abortive therapy.',
-    visits: [
-      { date: '2026-02-25', diagnosis: 'Migraine',         prescription: 'Sumatriptan 50mg PRN + Naproxen', notes: 'Aura noted. Counseled on triggers.', doctor: 'Dr. Sarah Smith' },
-      { date: '2025-10-20', diagnosis: 'Migraine follow-up', prescription: 'Sumatriptan PRN',              notes: 'Frequency reduced.',                doctor: 'Dr. Sarah Smith' },
-    ],
-  },
-];
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/Api';
 
 /* ═══════════════════════════════════════════════════
    HELPERS
@@ -156,96 +27,14 @@ const fmtDate    = (d) => { if (!d) return '—'; const dt=new Date(d+'T00:00:00
 const daysBetween= (a,b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
 
 const TYPE_CFG = {
-  Regular:{ bg:'bg-slate-100',  text:'text-slate-600',  border:'border-slate-200'  },
-  Chronic:{ bg:'bg-amber-100',  text:'text-amber-700',  border:'border-amber-200'  },
-  VIP:    { bg:'bg-violet-100', text:'text-violet-700', border:'border-violet-200' },
+  New:     { bg:'bg-sky-100',   text:'text-sky-700',    border:'border-sky-200'    },
+  Regular: { bg:'bg-slate-100', text:'text-slate-600',  border:'border-slate-200'  },
 };
 
 const TypeBadge = ({ type }) => (
   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${TYPE_CFG[type]?.bg} ${TYPE_CFG[type]?.text}`}>{type}</span>
 );
 
-/* ═══════════════════════════════════════════════════
-   ADD CONSULTATION MODAL
-═══════════════════════════════════════════════════ */
-function AddConsultationModal({ patient, onClose, onSave }) {
-  const [form, setForm] = useState({ diagnosis:'', prescription:'', notes:'' });
-  const set = (k,v) => setForm(f=>({...f,[k]:v}));
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e=>e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <div>
-            <h3 className="font-bold text-gray-900">Add Consultation</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{patient.name} · {fmtDate(new Date().toISOString().slice(0,10))}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400"/></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block">Diagnosis <span className="text-red-500">*</span></label>
-            <input value={form.diagnosis} onChange={e=>set('diagnosis',e.target.value)} placeholder="e.g. Hypertension monitoring"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block">Prescription</label>
-            <input value={form.prescription} onChange={e=>set('prescription',e.target.value)} placeholder="e.g. Amlodipine 5mg OD"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block">Notes</label>
-            <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} rows={3} placeholder="Clinical notes..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"/>
-          </div>
-        </div>
-        <div className="flex gap-3 p-5 pt-0">
-          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={!form.diagnosis}
-            onClick={()=>{onSave(form);onClose();}}>
-            <Check className="w-4 h-4 mr-1.5"/> Save Consultation
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   ADD FOLLOW-UP MODAL
-═══════════════════════════════════════════════════ */
-function AddFollowUpModal({ patient, onClose, onSave }) {
-  const [date, setDate] = useState('');
-  const [note, setNote] = useState('');
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={e=>e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900">Schedule Follow-up</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><X className="w-4 h-4 text-gray-400"/></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block">Follow-up Date <span className="text-red-500">*</span></label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide block">Note</label>
-            <textarea value={note} onChange={e=>setNote(e.target.value)} rows={2} placeholder="Reason for follow-up..."
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"/>
-          </div>
-        </div>
-        <div className="flex gap-3 p-5 pt-0">
-          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" disabled={!date}
-            onClick={()=>{onSave(date,note);onClose();}}>
-            <Check className="w-4 h-4 mr-1.5"/> Schedule
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════════
    PATIENT DETAIL MODAL
@@ -253,8 +42,6 @@ function AddFollowUpModal({ patient, onClose, onSave }) {
 function PatientDetailModal({ patient: initPatient, onClose, toast }) {
   const [patient, setPatient]     = useState(initPatient);
   const [activeTab, setActiveTab] = useState('personal');
-  const [showConsult, setShowConsult] = useState(false);
-  const [showFollowUp, setShowFollowUp] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [noteDraft, setNoteDraft]  = useState(patient.medicalNotes);
 
@@ -272,17 +59,6 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
     toast({title:'Notes updated',description:'Medical notes saved successfully.'});
   };
 
-  const saveConsult = (form) => {
-    const today = new Date().toISOString().slice(0,10);
-    const newVisit = { date:today, diagnosis:form.diagnosis, prescription:form.prescription, notes:form.notes, doctor:'Dr. Sarah Smith' };
-    setPatient(p=>({...p, visits:[newVisit,...p.visits], totalVisits:p.totalVisits+1, lastVisit:today }));
-    toast({title:'Consultation added',description:`${form.diagnosis} recorded for ${patient.name}.`});
-  };
-
-  const saveFollowUp = (date,note) => {
-    setPatient(p=>({...p, followUp:true, nextFollowUp:date}));
-    toast({title:'Follow-up scheduled',description:`Next visit set for ${fmtDate(date)}.`});
-  };
 
   const markFollowUpDone = () => {
     setPatient(p=>({...p,followUp:false,nextFollowUp:null}));
@@ -323,23 +99,7 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
               </button>
             </div>
 
-            {/* Action buttons */}
-            <div className="relative flex items-center gap-2 mt-4 flex-wrap">
-              <Button size="sm" onClick={()=>setShowConsult(true)}
-                className="h-8 px-3 text-xs bg-white text-blue-700 hover:bg-blue-50 font-bold gap-1.5 shadow-sm">
-                <Plus className="w-3.5 h-3.5"/> Add Consultation
-              </Button>
-              <Button size="sm" onClick={()=>setShowFollowUp(true)}
-                className="h-8 px-3 text-xs bg-white/15 hover:bg-white/25 text-white border border-white/20 font-bold gap-1.5">
-                <CalendarClock className="w-3.5 h-3.5"/> Schedule Follow-up
-              </Button>
-              {patient.followUp && (
-                <Button size="sm" onClick={markFollowUpDone}
-                  className="h-8 px-3 text-xs bg-green-500/80 hover:bg-green-500 text-white font-bold gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5"/> Mark Follow-up Done
-                </Button>
-              )}
-            </div>
+
           </div>
 
           {/* ── TABS ── */}
@@ -463,9 +223,6 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm font-bold text-gray-900">{patient.visits.length} recorded visits</p>
-                  <Button size="sm" onClick={()=>setShowConsult(true)} className="h-8 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5">
-                    <Plus className="w-3.5 h-3.5"/> Add Visit
-                  </Button>
                 </div>
                 {patient.visits.length===0
                   ? <div className="text-center py-12 text-gray-400 text-sm">No visit records yet.</div>
@@ -530,9 +287,7 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
                     <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
                       <Bell className="w-4 h-4 text-orange-500"/> Follow-up Management
                     </p>
-                    <Button size="sm" onClick={()=>setShowFollowUp(true)} className="h-7 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1">
-                      <Plus className="w-3.5 h-3.5"/> Schedule
-                    </Button>
+              
                   </div>
 
                   {patient.followUp ? (
@@ -551,10 +306,6 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
                           )}
                         </div>
                       </div>
-                      <Button onClick={markFollowUpDone}
-                        className="w-full h-9 text-xs bg-green-600 hover:bg-green-700 text-white gap-1.5 font-bold">
-                        <CheckCircle2 className="w-4 h-4"/> Mark Follow-up as Completed
-                      </Button>
                     </div>
                   ) : (
                     <div className="text-center py-6">
@@ -607,8 +358,7 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
         </div>
       </div>
 
-      {showConsult  && <AddConsultationModal patient={patient} onClose={()=>setShowConsult(false)}  onSave={saveConsult}/>}
-      {showFollowUp && <AddFollowUpModal     patient={patient} onClose={()=>setShowFollowUp(false)} onSave={saveFollowUp}/>}
+
     </>
   );
 }
@@ -617,7 +367,8 @@ function PatientDetailModal({ patient: initPatient, onClose, toast }) {
    MAIN PAGE
 ═══════════════════════════════════════════════════ */
 export default function DoctorPatientsPage() {
-  const [patients,     setPatients]     = useState(PATIENTS);
+  const { user } = useAuth();
+  const [patients,     setPatients]     = useState([]);
   const [search,       setSearch]       = useState('');
   const [filterType,   setFilterType]   = useState('');
   const [filterFU,     setFilterFU]     = useState('');
@@ -626,7 +377,89 @@ export default function DoctorPatientsPage() {
   const [filtersOpen,  setFiltersOpen]  = useState(false);
   const [page,         setPage]         = useState(1);
   const [pageSize,     setPageSize]     = useState(5);
+  const [loading,      setLoading]      = useState(true);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const parseList = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value.filter(Boolean);
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed.filter(Boolean) : value.split(',').map((v) => v.trim()).filter(Boolean);
+        } catch {
+          return value.split(',').map((v) => v.trim()).filter(Boolean);
+        }
+      }
+      return [];
+    };
+
+    const loadHandledPatients = async () => {
+      if (!user?.user_id) return;
+      setLoading(true);
+      try {
+        const consults = await api.consultations.getAll({ doctor_id: user.user_id });
+        const handled = (Array.isArray(consults) ? consults : [])
+          .filter((c) => ['ongoing', 'completed'].includes(String(c.status || '').toLowerCase()));
+
+        const byPatient = handled.reduce((acc, c) => {
+          const pid = c.patient_id;
+          if (!pid) return acc;
+          if (!acc[pid]) acc[pid] = [];
+          acc[pid].push(c);
+          return acc;
+        }, {});
+
+        const mapped = Object.entries(byPatient).map(([pid, items]) => {
+          const sorted = [...items].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+          const latest = sorted[0];
+          const p = latest.patient || {};
+          const visits = sorted.map((v) => ({
+            date: (v.queue?.queue_date || String(v.updated_at || '').slice(0, 10) || '').slice(0, 10),
+            diagnosis: v.diagnosis || '—',
+            prescription: Array.isArray(v.treatment_items)
+              ? v.treatment_items.map((t) => `${t.drug || ''} ${t.dose || ''}`.trim()).filter(Boolean).join(', ')
+              : '—',
+            notes: v.notes || '',
+            doctor: v.doctor_name || '—',
+          }));
+
+          const followUpDate = sorted
+            .map((v) => v.follow_up_date)
+            .filter(Boolean)
+            .sort()[0] || null;
+
+          return {
+            id: String(pid),
+            name: p.name || latest.patient_name || `Patient #${pid}`,
+            age: p.age ?? '—',
+            gender: p.gender || '—',
+            contact: p.contact || '—',
+            email: p.email || '—',
+            address: p.address || '—',
+            type: visits.length <= 1 ? 'New' : 'Regular',
+            totalVisits: visits.length,
+            lastVisit: visits[0]?.date || new Date().toISOString().slice(0, 10),
+            followUp: !!followUpDate,
+            nextFollowUp: followUpDate,
+            allergies: parseList(p.allergies),
+            conditions: parseList(p.conditions),
+            medicalNotes: latest.notes || '',
+            visits,
+          };
+        });
+
+        setPatients(mapped.sort((a, b) => String(b.lastVisit).localeCompare(String(a.lastVisit))));
+      } catch (e) {
+        toast({ title: 'Failed to load patients', description: 'Unable to fetch doctor patient records.', variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadHandledPatients();
+  }, [user?.user_id]);
 
   /* draft filters (applied on button click) */
   const [draftType,  setDraftType]  = useState('');
@@ -702,8 +535,8 @@ export default function DoctorPatientsPage() {
             {/* Quick summary pills */}
             <div className="flex items-center gap-2 flex-wrap">
               {[
-                {label:'Chronic',  count:patients.filter(p=>p.type==='Chronic').length,  color:'bg-amber-400/30 text-amber-100 border-amber-300/30'},
-                {label:'VIP',      count:patients.filter(p=>p.type==='VIP').length,      color:'bg-violet-400/30 text-violet-100 border-violet-300/30'},
+                {label:'New',      count:patients.filter(p=>p.type==='New').length,      color:'bg-sky-400/30 text-sky-100 border-sky-300/30'},
+                {label:'Regular',  count:patients.filter(p=>p.type==='Regular').length,  color:'bg-slate-400/30 text-slate-100 border-slate-300/30'},
                 {label:'Follow-up',count:patients.filter(p=>p.followUp).length,          color:'bg-orange-400/30 text-orange-100 border-orange-300/30'},
               ].map(x=>(
                 <div key={x.label} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold ${x.color}`}>
@@ -756,9 +589,8 @@ export default function DoctorPatientsPage() {
                     <select value={draftType} onChange={e=>setDraftType(e.target.value)}
                       className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none pr-8">
                       <option value="">All Types</option>
+                      <option value="New">New</option>
                       <option value="Regular">Regular</option>
-                      <option value="Chronic">Chronic</option>
-                      <option value="VIP">VIP</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
                   </div>
@@ -801,11 +633,14 @@ export default function DoctorPatientsPage() {
         {/* ── PATIENT TABLE ── */}
         <Card className="border border-gray-100 shadow-sm">
           <CardContent className="p-0">
+            {loading && (
+              <div className="text-sm text-gray-400 text-center py-8">Loading handled patients...</div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/80">
-                    {['Patient ID','Full Name','Age','Gender','Contact','Visits','Last Visit','Follow-up','Actions'].map(h=>(
+                    {['Full Name','Age','Gender','Contact','Visits','Last Visit','Follow-up','Actions'].map(h=>(
                       <th key={h} className="text-left py-3.5 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap first:pl-5 last:pr-5">{h}</th>
                     ))}
                   </tr>
@@ -825,11 +660,7 @@ export default function DoctorPatientsPage() {
                       className="border-b border-gray-50 last:border-0 hover:bg-blue-50/30 transition-colors cursor-pointer group"
                       onClick={()=>setSelected(p)}>
 
-                      {/* Patient ID */}
-                      <td className="py-3.5 px-4 pl-5">
-                        <span className="text-xs font-black text-gray-400 font-mono">{p.id}</span>
-                      </td>
-
+        
                       {/* Full Name */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2.5">
@@ -884,10 +715,10 @@ export default function DoctorPatientsPage() {
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 pr-5">
-                        <Button size="sm" onClick={e=>{e.stopPropagation();setSelected(p);}}
-                          className="h-8 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5 shadow-sm">
-                          <Eye className="w-3.5 h-3.5"/> View
-                        </Button>
+                        <button size="sm" onClick={e=>{e.stopPropagation();setSelected(p);}}
+                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all">
+      <Eye className="w-3.5 h-3.5" /> View
+                        </button>
                       </td>
                     </tr>
                   ))}

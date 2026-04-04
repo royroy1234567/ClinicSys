@@ -1,192 +1,250 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
-import {
-  Calendar,
-  Clock,
-  Search,
-  Plus,
-  UserPlus,
-} from 'lucide-react';
+import { RefreshCw, Activity, TrendingUp, CircleDot, Users, Clock3, DollarSign, BarChart3 } from 'lucide-react';
 import { api } from '../services/Api';
-import { useNavigate } from 'react-router-dom';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
+} from 'recharts';
 
-const StatusBadge = ({ status }) => {
-  const variants = {
-    scheduled: 'bg-blue-100 text-blue-700',
-    ongoing: 'bg-yellow-100 text-yellow-700',
-    completed: 'bg-green-100 text-green-700',
-    cancelled: 'bg-red-100 text-red-700',
-    no_show: 'bg-gray-100 text-gray-700',
-  };
+const money = (n) => Number(n || 0).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
+const dayKey = (d) => d.toISOString().slice(0, 10);
 
-  return (
-    <Badge className={`${variants[status]} capitalize`}>
-      {status.replace('_', ' ')}
-    </Badge>
-  );
-};
-
-const StaffDashboard = () => {
-  const [appointments, setAppointments] = useState([]);
-  const [patients, setPatients] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const [refreshing, setRefreshing] = useState(false);
+  const [appointments, setAppointments] = useState([]);
+  const [queueRows, setQueueRows] = useState([]);
+  const [transactions, setTransactions] = useState([]);
 
-  const today = new Date().toISOString().split('T')[0];
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
-      const [appointmentsData, patientsData, doctorsData] = await Promise.all([
-        api.appointments.getAll({ date: today }),
-        api.patients.getAll(),
-        api.doctors.getAll(),
+      const today = dayKey(new Date());
+      const [aptRows, qRows, txRows] = await Promise.all([
+        api.appointments.getMine(),
+        api.queue.getAll(today),
+        fetch(`${import.meta.env.VITE_API_URL ?? 'http://backend1.test/api'}/transactions`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+          },
+        }).then((r) => (r.ok ? r.json() : [])),
       ]);
-
-      setAppointments(appointmentsData);
-      setPatients(patientsData);
-      setDoctors(doctorsData);
-    } catch (error) {
-      console.error('Error loading data:', error);
+      setAppointments(Array.isArray(aptRows) ? aptRows : []);
+      setQueueRows(Array.isArray(qRows) ? qRows : []);
+      setTransactions(Array.isArray(txRows) ? txRows : []);
+    } catch (e) {
+      console.error('Failed loading staff dashboard data:', e);
+      setAppointments([]);
+      setQueueRows([]);
+      setTransactions([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getPatientName = (patientId) => {
-    const patient = patients.find(p => p.id === patientId);
-    return patient?.name || 'Unknown';
-  };
+  useEffect(() => {
+    loadData();
+    const t = setInterval(() => loadData(true), 10000);
+    return () => clearInterval(t);
+  }, []);
 
-  const getDoctorName = (doctorId) => {
-    const doctor = doctors.find(d => d.id === doctorId);
-    return doctor?.name || 'Unknown';
-  };
+  const statusOverview = useMemo(() => ({
+    waiting: queueRows.filter((q) => q.status === 'waiting').length,
+    inQueue: queueRows.filter((q) => q.status === 'called').length,
+    ongoing: queueRows.filter((q) => q.status === 'ongoing').length,
+    completed: queueRows.filter((q) => q.status === 'completed').length,
+    noShow: queueRows.filter((q) => q.status === 'no_show').length,
+  }), [queueRows]);
+
+  const dailyPatientVolume = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const key = dayKey(d);
+      const fromAppointments = appointments.filter((a) => a.appointment_date === key).length;
+      const fromWalkins = queueRows.filter((q) => q.queue_date === key && q.source === 'walkin').length;
+      return { key, label: key.slice(5), count: fromAppointments + fromWalkins };
+    });
+  }, [appointments, queueRows]);
+
+  const { dailyRevenue, weeklyRevenue } = useMemo(() => {
+    const today = dayKey(new Date());
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 6);
+    const daily = transactions
+      .filter((t) => String(t.created_at || '').slice(0, 10) === today)
+      .reduce((s, t) => s + Number(t.total || 0), 0);
+    const weekly = transactions
+      .filter((t) => new Date(t.created_at) >= weekStart)
+      .reduce((s, t) => s + Number(t.total || 0), 0);
+    return { dailyRevenue: daily, weeklyRevenue: weekly };
+  }, [transactions]);
+
+  const topServices = useMemo(() => {
+    return Object.values(
+      transactions
+        .flatMap((t) => t.items || [])
+        .reduce((acc, item) => {
+          const key = item.service_name || 'Unknown';
+          if (!acc[key]) acc[key] = { name: key, qty: 0 };
+          acc[key].qty += Number(item.quantity || 0);
+          return acc;
+        }, {})
+    )
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
+  }, [transactions]);
+
+  const revenueSeries = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const key = dayKey(d);
+      return {
+        key,
+        label: key.slice(5),
+        value: transactions
+          .filter((t) => String(t.created_at || '').slice(0, 10) === key)
+          .reduce((s, t) => s + Number(t.total || 0), 0),
+      };
+    });
+  }, [transactions]);
+
+  const totalTodayPatients = useMemo(
+    () => statusOverview.waiting + statusOverview.inQueue + statusOverview.ongoing + statusOverview.completed + statusOverview.noShow,
+    [statusOverview]
+  );
+  const statusChartData = [
+    { name: 'Waiting', value: statusOverview.waiting, color: '#f59e0b' },
+    { name: 'In Queue', value: statusOverview.inQueue, color: '#3b82f6' },
+    { name: 'Ongoing', value: statusOverview.ongoing, color: '#22c55e' },
+    { name: 'Completed', value: statusOverview.completed, color: '#64748b' },
+    { name: 'No Show', value: statusOverview.noShow, color: '#ef4444' },
+  ];
 
   if (loading) {
     return (
-      <MainLayout title="Staff Dashboard" subtitle="Manage appointments and patients">
+      <MainLayout title="Staff Dashboard" subtitle="Queue and operations overview">
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
         </div>
       </MainLayout>
     );
   }
 
   return (
-    <MainLayout title="Staff Dashboard" subtitle="Manage appointments and patients">
-      <div className="space-y-6">
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <MainLayout title="Staff Dashboard" subtitle="Queue and operations overview">
+      <div className="space-y-5">
+
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-xs text-gray-500 uppercase font-semibold">Patients Today</p><p className="text-2xl font-black mt-1">{totalTodayPatients}</p></div><div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center"><Users className="w-5 h-5 text-blue-600" /></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-xs text-gray-500 uppercase font-semibold">Active Queue</p><p className="text-2xl font-black mt-1">{statusOverview.waiting + statusOverview.inQueue + statusOverview.ongoing}</p></div><div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center"><Clock3 className="w-5 h-5 text-amber-600" /></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-xs text-gray-500 uppercase font-semibold">Daily Revenue</p><p className="text-2xl font-black mt-1">{money(dailyRevenue)}</p></div><div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center"><DollarSign className="w-5 h-5 text-emerald-600" /></div></div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-xs text-gray-500 uppercase font-semibold">Weekly Revenue</p><p className="text-2xl font-black mt-1">{money(weeklyRevenue)}</p></div><div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center"><BarChart3 className="w-5 h-5 text-violet-600" /></div></div></CardContent></Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Today</p>
-                  <h3 className="text-2xl font-bold mt-1">{appointments.length}</h3>
-                </div>
-                <Calendar className="w-8 h-8 text-primary" />
-              </div>
+            <CardHeader><CardTitle className="text-sm">Daily Patient Volume (7 days)</CardTitle></CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dailyPatientVolume}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Completed</p>
-                  <h3 className="text-2xl font-bold mt-1">
-                    {appointments.filter(a => a.status === 'completed').length}
-                  </h3>
-                </div>
-                <Clock className="w-8 h-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Pending</p>
-                  <h3 className="text-2xl font-bold mt-1">
-                    {appointments.filter(a => a.status === 'scheduled' || a.status === 'ongoing').length}
-                  </h3>
-                </div>
-                <Clock className="w-8 h-8 text-yellow-600" />
-              </div>
+            <CardHeader><CardTitle className="text-sm">Consultation Status Overview</CardTitle></CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={statusChartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={85}
+                    label
+                  >
+                    {statusChartData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
         </div>
 
-        {/* Today's Appointment Queue */}
-        <Card data-testid="appointment-queue-card">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Today's Appointment Queue</CardTitle>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="Search appointments..."
-                  className="pl-10 w-64"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  data-testid="search-appointments-input"
-                />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader><CardTitle className="text-sm inline-flex items-center gap-2"><TrendingUp className="w-4 h-4" />Revenue Overview</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-gray-700">Daily earnings: <strong>{money(dailyRevenue)}</strong></p>
+              <p className="text-sm text-gray-700">Weekly earnings: <strong>{money(weeklyRevenue)}</strong></p>
+              <div className="h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={revenueSeries}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" />
+                    <YAxis />
+                    <Tooltip formatter={(v) => money(v)} />
+                    <Area type="monotone" dataKey="value" stroke="#16a34a" fill="#86efac" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {appointments.length > 0 ? (
-              <div className="space-y-3">
-                {appointments.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    data-testid={`appointment-item-${apt.id}`}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <div>
-                          <p className="font-medium">{getPatientName(apt.patient_id)}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Dr. {getDoctorName(apt.doctor_id)}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">{apt.reason}</p>
-                    </div>
+            </CardContent>
+          </Card>
 
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <p className="text-sm font-medium">{apt.start_time} - {apt.end_time}</p>
-                        <StatusBadge status={apt.status} />
-                      </div>
-                      <Button size="sm" variant="outline">View</Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Calendar className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                <p className="text-muted-foreground">No appointments scheduled for today</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-sm inline-flex items-center gap-2"><Activity className="w-4 h-4" />Top Services</CardTitle></CardHeader>
+            <CardContent>
+              {topServices.length === 0 ? (
+                <p className="text-sm text-gray-500">No service activity yet.</p>
+              ) : (
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={topServices}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" hide />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Bar dataKey="qty" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </MainLayout>
   );
-};
-
-export default StaffDashboard;
+}

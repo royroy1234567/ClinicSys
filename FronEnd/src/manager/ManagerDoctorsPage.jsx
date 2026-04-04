@@ -338,7 +338,7 @@ export default function DoctorsPage() {
 
                       <td className="py-3 px-4">
                         <Button size="sm" variant="outline"
-                          className="h-7 px-2.5 text-xs gap-1 border-gray-200 text-gray-600 hover:bg-gray-50"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all"
                           onClick={() => setViewDoctor(doctor)}>
                           <Eye className="w-3 h-3" /> View
                         </Button>

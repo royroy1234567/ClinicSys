@@ -16,6 +16,13 @@ const calcAge = (dob) => {
   return age;
 };
 
+const getTodayISO = () => {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${today.getFullYear()}-${month}-${day}`;
+};
+
 const pwStrength = (pw) => {
   if (!pw) return { score: 0, label: '', color: '' };
   let score = 0;
@@ -70,6 +77,21 @@ const inputBase = (error) => ({
 });
 
 const API_BASE = 'http://backend1.test';
+const NAME_FIELDS = new Set(['firstName', 'middleName', 'lastName', 'emergencyName']);
+
+const sanitizeNameInput = (value) => value.replace(/[0-9]/g, '');
+
+const normalizeMobileInput = (value) => {
+  const digits = (value || '').replace(/\D/g, '');
+  if (!digits) return '';
+
+  let core = digits;
+  if (core.startsWith('63')) core = core.slice(2);
+  if (core.startsWith('0')) core = core.slice(1);
+  core = core.slice(0, 10);
+
+  return core ? `+63${core}` : '';
+};
 
 const apiRegister = async (payload) => {
   const response = await fetch(`${API_BASE}/api/patients/register`, {
@@ -93,7 +115,7 @@ const apiCheckEmail = async (email) => {
 };
 
 /* ─── Reusable field components ─── */
-function Field({ label, id, type = 'text', placeholder, value, onChange, error, required, hint, readOnly, extraStyle }) {
+function Field({ label, id, type = 'text', placeholder, value, onChange, error, required, hint, readOnly, extraStyle, inputProps }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <label htmlFor={id} style={labelStyle}>
@@ -103,6 +125,7 @@ function Field({ label, id, type = 'text', placeholder, value, onChange, error, 
         id={id} type={type} placeholder={placeholder} value={value}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         readOnly={readOnly}
+        {...(inputProps || {})}
         style={{ ...inputBase(error), ...(extraStyle || {}) }}
         onFocus={(e) => { if (!readOnly) { e.target.style.borderColor = '#2563EB'; e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.12)'; e.target.style.background = '#fff'; } }}
         onBlur={(e) => { e.target.style.borderColor = error ? '#FCA5A5' : '#E5E7EB'; e.target.style.boxShadow = 'none'; e.target.style.background = readOnly ? '#F3F4F6' : (error ? '#FFF5F5' : '#F9FAFB'); }}
@@ -325,11 +348,10 @@ function EmailVerificationModal({ email, onVerified, onClose }) {
 }
 
 /* ─── Step 1: Credentials + Email + Google ─── */
-function StepAccount({ form, set, errors, showPw, setShowPw, showCpw, setShowCpw, emailVerified }) {
+function StepAccount({ form, set, errors, showPw, setShowPw, showCpw, setShowCpw, emailVerified, emailTaken, setEmailTaken }) {
   const pw    = pwStrength(form.password);
   const match = form.confirmPassword && form.confirmPassword === form.password;
 
-  const [emailTaken,    setEmailTaken]    = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
 
   // Real-time email availability check with debounce
@@ -467,6 +489,8 @@ function StepAccount({ form, set, errors, showPw, setShowPw, showCpw, setShowCpw
 
 /* ─── Step 2: Personal Info ─── */
 function StepPersonal({ form, set, errors }) {
+  const todayISO = getTodayISO();
+
   return (
     <>
       <div style={{ marginBottom: 8 }}>
@@ -479,9 +503,9 @@ function StepPersonal({ form, set, errors }) {
           <Field label="Last Name" id="lastName" value={form.lastName} onChange={v => set('lastName', v)} error={errors.lastName} required placeholder="dela Cruz" />
         </div>
         <div style={grid3}>
-          <Field label="Date of Birth" id="dob" type="date" value={form.dob} onChange={v => set('dob', v)} error={errors.dob} required />
+          <Field label="Date of Birth" id="dob" type="date" value={form.dob} onChange={v => set('dob', v)} error={errors.dob} required inputProps={{ max: todayISO }} />
           <Field label="Age" id="age" value={form.age} readOnly hint="Auto-calculated" extraStyle={{ color: '#6B7280', background: '#F3F4F6', cursor: 'default' }} />
-          <FieldSelect label="Gender" id="gender" value={form.gender} onChange={v => set('gender', v)} error={errors.gender} required options={['Male', 'Female', 'Prefer not to say']} />
+          <FieldSelect label="Gender" id="gender" value={form.gender} onChange={v => set('gender', v)} error={errors.gender} required options={['Male', 'Female']} />
         </div>
         <div style={grid2}>
           <FieldSelect label="Civil Status" id="civilStatus" value={form.civilStatus} onChange={v => set('civilStatus', v)} options={['Single', 'Married', 'Widowed', 'Separated', 'Divorced']} placeholder="Select (optional)" />
@@ -649,14 +673,32 @@ export default function RegisterPage() {
   }, [form.dob]);
 
   const set = (k, v) => {
-    setForm(f => ({ ...f, [k]: v }));
+    let nextValue = v;
+    if (NAME_FIELDS.has(k) && typeof nextValue === 'string') {
+      nextValue = sanitizeNameInput(nextValue);
+    }
+    if ((k === 'mobile' || k === 'emergencyContact') && typeof nextValue === 'string') {
+      nextValue = normalizeMobileInput(nextValue);
+    }
+
+    setForm(f => ({ ...f, [k]: nextValue }));
     setErrors(e => ({ ...e, [k]: '' }));
     setApiError('');
-    if (k === 'email') setEmailVerified(false);
+    if (k === 'email') {
+      setEmailVerified(false);
+      setEmailTaken(false);
+    }
+    if (nextValue !== v) {
+      if (NAME_FIELDS.has(k)) {
+        setErrors(e => ({ ...e, [k]: 'Numbers are not allowed in this field' }));
+      }
+    }
   };
 
   const validate = () => {
     const e = {};
+    const hasDigits = (value) => /\d/.test(value || '');
+
     if (step === 1) {
       if (!form.email.trim())     e.email = 'Email is required';
       else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email';
@@ -669,17 +711,40 @@ export default function RegisterPage() {
     }
     if (step === 2) {
       if (!form.firstName.trim()) e.firstName = 'First name is required';
+      else if (hasDigits(form.firstName)) e.firstName = 'Numbers are not allowed in first name';
+
       if (!form.lastName.trim())  e.lastName  = 'Last name is required';
+      else if (hasDigits(form.lastName)) e.lastName = 'Numbers are not allowed in last name';
+
+      if (form.middleName && hasDigits(form.middleName)) e.middleName = 'Numbers are not allowed in middle name';
+
       if (!form.dob)              e.dob       = 'Date of birth is required';
+      else {
+        const selectedDob = new Date(form.dob);
+        const today = new Date();
+        selectedDob.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+
+        if (selectedDob > today) {
+          e.dob = 'Future date is not allowed';
+        } else if (calcAge(form.dob) < 18) {
+          e.dob = 'You must be at least 18 years old to register';
+        }
+      }
+
       if (!form.gender)           e.gender    = 'Gender is required';
       if (!form.mobile.trim())    e.mobile    = 'Mobile number is required';
+      else if (!/^\+63\d{10}$/.test(form.mobile)) e.mobile = 'Mobile must be +63 followed by 10 digits';
       if (!form.street.trim())    e.street    = 'Street is required';
       if (!form.city.trim())      e.city      = 'City is required';
       if (!form.province.trim())  e.province  = 'Province is required';
     }
     if (step === 4) {
       if (!form.emergencyName.trim())         e.emergencyName         = 'Name is required';
+      else if (hasDigits(form.emergencyName)) e.emergencyName         = 'Numbers are not allowed in name';
+
       if (!form.emergencyContact.trim())      e.emergencyContact      = 'Contact number is required';
+      else if (!/^\+63\d{10}$/.test(form.emergencyContact)) e.emergencyContact = 'Contact number must be +63 followed by 10 digits';
       if (!form.emergencyRelationship.trim()) e.emergencyRelationship = 'Relationship is required';
     }
     if (step === 5) {
@@ -709,8 +774,23 @@ export default function RegisterPage() {
     return mapped;
   };
 
-  const next = () => {
+  const next = async () => {
     if (!validate()) return;
+
+    if (step === 1) {
+      try {
+        const exists = await apiCheckEmail(form.email.trim());
+        if (exists) {
+          setEmailTaken(true);
+          setErrors(e => ({ ...e, email: 'This email is already registered' }));
+          return;
+        }
+        setEmailTaken(false);
+      } catch (_) {
+        // If availability check fails, backend unique validation will still protect registration.
+      }
+    }
+
     if (step === 1 && !emailVerified) {
       setShowVerify(true);
       return;
@@ -799,7 +879,7 @@ export default function RegisterPage() {
 
   const stepContent = () => {
     switch (step) {
-      case 1: return <StepAccount form={form} set={set} errors={errors} showPw={showPw} setShowPw={setShowPw} showCpw={showCpw} setShowCpw={setShowCpw} emailVerified={emailVerified} />;
+      case 1: return <StepAccount form={form} set={set} errors={errors} showPw={showPw} setShowPw={setShowPw} showCpw={showCpw} setShowCpw={setShowCpw} emailVerified={emailVerified} emailTaken={emailTaken} setEmailTaken={setEmailTaken} />;
       case 2: return <StepPersonal  form={form} set={set} errors={errors} />;
       case 3: return <StepMedical   form={form} set={set} />;
       case 4: return <StepEmergency form={form} set={set} errors={errors} />;

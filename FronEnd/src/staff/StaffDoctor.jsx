@@ -567,7 +567,7 @@ export default function StaffDoctorsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50">
-                    {['Doctor ID', 'Doctor Name', 'Specialization', 'Availability Status', 'Actions'].map(h => (
+                    {[ 'Doctor Name', 'Specialization', 'Availability Status', 'Actions'].map(h => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap first:pl-5">{h}</th>
                     ))}
                   </tr>
@@ -595,10 +595,7 @@ export default function StaffDoctorsPage() {
                     return (
                       <tr key={d.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors">
 
-                        {/* Doctor ID */}
-                        <td className="py-3.5 px-4 pl-5">
-                          <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">{d.id}</span>
-                        </td>
+                  
 
                         {/* Name + avatar */}
                         <td className="py-3.5 px-4">

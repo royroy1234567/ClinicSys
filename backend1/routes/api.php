@@ -7,9 +7,11 @@ use App\Http\Controllers\GoogleController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DoctorScheduleController;
 use App\Http\Controllers\AppointmentController;
+use App\Http\Controllers\ConsultationController;
 use App\Http\Controllers\QueueEntriesController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\ClinicSettingController;
+use App\Http\Controllers\ManagerAnalyticsController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -56,6 +58,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Clinic Users
     Route::apiResource('users', ClinicUsersController::class);
     Route::patch('users/{id}/toggle-status', [ClinicUsersController::class, 'toggleStatus']);
+    Route::get('users/{id}/availability', [ClinicUsersController::class, 'getAvailability']);
+    Route::patch('users/{id}/availability', [ClinicUsersController::class, 'updateAvailability']);
 
     // Services
     Route::apiResource('servics', ServicsController::class);
@@ -87,13 +91,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [QueueEntriesController::class, 'index']);
         Route::post('/walkin', [QueueEntriesController::class, 'storeWalkin']);
         Route::patch('/{id}/status', [QueueEntriesController::class, 'updateStatus']);
+        Route::patch('/{id}/assign-doctor', [QueueEntriesController::class, 'assignDoctor']);
     });
     Route::post('/appointments/{id}/check-in', [QueueEntriesController::class, 'checkInAppointment']);
+    Route::get('/consultations', [ConsultationController::class, 'index']);
+    Route::get('/consultations/queue-entry/{queueEntryId}', [ConsultationController::class, 'byQueueEntry']);
+    Route::put('/consultations/queue-entry/{queueEntryId}', [ConsultationController::class, 'upsertByQueueEntry']);
+    Route::post('/consultations/{consultationId}/rate', [ConsultationController::class, 'rate']);
 
     // Transactions (POS)
     Route::prefix('transactions')->group(function () {
+        Route::get('/pending-payments', [TransactionController::class, 'pendingPayments']);
         Route::get('/',        [TransactionController::class, 'index']);
         Route::post('/',       [TransactionController::class, 'store']);
         Route::get('/{transaction}', [TransactionController::class, 'show']);
     });
+
+    Route::get('/manager/analytics/dashboard', [ManagerAnalyticsController::class, 'dashboard']);
 });

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@/context/AuthContext';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -13,14 +13,104 @@ import {
   Settings,
   LogOut,
   ChevronRight,
-  AlertTriangle,
   CalendarCheck,
   ShoppingCart,
   X,
 } from 'lucide-react';
 
 /* ══════════════════════════════════════════════════
-   LOGOUT CONFIRMATION MODAL
+   MENU CONFIG — per role, with dividers + children
+══════════════════════════════════════════════════ */
+const MENU_ITEMS = {
+  manager: [
+    { type: 'divider', label: 'Overview' },
+    {
+      icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard',
+      children: [
+        { key: 'overview',   label: 'Overview' },
+         { key: 'sales',      label: 'Sales & Revenue' },
+        { key: 'daily',      label: 'Daily Appointments' },
+        { key: 'status',     label: 'Appointment Status' },
+        { key: 'doctor',     label: 'Doctor Performance' },
+        { key: 'patient',    label: 'Patient Visits' },
+        { key: 'followup',   label: 'Follow-Up (CRM)' },
+        { key: 'engagement', label: 'Patient Engagement' },
+        { key: 'queue',      label: 'Queue Management' },
+       
+      ],
+    },
+    { type: 'divider', label: 'People' },
+    { icon: Users,         label: 'Clinic Accounts', path: '/user-management' },
+    { icon: UserPlus,      label: 'Patients',         path: '/patients'        },
+    { icon: Stethoscope,   label: 'Doctors',          path: '/doctors'         },
+    { type: 'divider', label: 'Operations' },
+    { icon: ClipboardList, label: 'Services',         path: '/services'        },
+    { icon: Calendar,      label: 'Appointments',     path: '/appointments'    },
+  ],
+
+  admin: [
+    { type: 'divider', label: 'Overview' },
+    { icon: LayoutDashboard, label: 'Dashboard',      path: '/dashboard'      },
+    { type: 'divider', label: 'Management' },
+    { icon: Users,         label: 'User Management',  path: '/acc-management' },
+    { type: 'divider', label: 'System' },
+    { icon: Activity,      label: 'Activity Logs',    path: '/admin-activity' },
+    { icon: Settings,      label: 'Settings',          path: '/settings'       },
+  ],
+
+  staff: [
+    { type: 'divider', label: 'Overview' },
+    { icon: LayoutDashboard, label: 'Dashboard',      path: '/dashboard'          },
+    { type: 'divider', label: 'Work' },
+    { icon: ShoppingCart,  label: 'POS',              path: '/pos'                },
+    { icon: Calendar,      label: 'Appointments',     path: '/staff-appointments' },
+    { icon: ClipboardList, label: 'Queue',            path: '/queue'              },
+    { type: 'divider', label: 'Reference' },
+    { icon: Stethoscope,   label: 'Doctors',          path: '/staff-doctors'      },
+    { icon: Settings,      label: 'Settings',          path: '/staff-settings'     },
+  ],
+
+  doctor: [
+    { type: 'divider', label: 'Overview' },
+    { icon: LayoutDashboard, label: 'Dashboard',      path: '/dashboard'       },
+    { type: 'divider', label: 'My Work' },
+    { icon: ClipboardList, label: 'Consultations',    path: '/consultations'   },
+    { icon: Calendar,      label: 'My Schedule',      path: '/schedule'        },
+    { icon: CalendarCheck, label: 'Availability',     path: '/availability'    },
+    { type: 'divider', label: 'Patients' },
+    { icon: UserPlus,      label: 'Patients',          path: '/Doctorpatients'  },
+    { type: 'divider', label: 'Configuration' },
+    { icon: Settings,      label: 'Settings',          path: '/doctor-settings' },
+  ],
+
+  patient: [
+    { type: 'divider', label: 'Overview' },
+    { icon: LayoutDashboard, label: 'Dashboard',      path: '/dashboard'        },
+    { type: 'divider', label: 'My Health' },
+    { icon: Calendar,      label: 'Book Appointments', path: '/my-appointments' },
+    { icon: ClipboardList, label: 'Medical Records',  path: '/records'          },
+    { type: 'divider', label: 'Account' },
+    { icon: Settings,      label: 'Settings',          path: '/patient-settings' },
+  ],
+};
+
+/* ══════════════════════════════════════════════════
+   SECTION DIVIDER
+══════════════════════════════════════════════════ */
+function SectionDivider({ label, slim }) {
+  if (slim) return null;
+  return (
+    <div className="flex items-center gap-2 px-4 pt-4 pb-1">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 whitespace-nowrap">
+        {label}
+      </span>
+      <div className="flex-1 h-px bg-gray-100" />
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   LOGOUT MODAL
 ══════════════════════════════════════════════════ */
 function LogoutModal({ onConfirm, onCancel }) {
   return (
@@ -57,19 +147,28 @@ function LogoutModal({ onConfirm, onCancel }) {
 
 /* ══════════════════════════════════════════════════
    SIDEBAR
-   Props:
-     collapsed     — boolean  (desktop: controlled by MainLayout wrapper width)
-     mobileOpen    — boolean
-     onMobileClose — fn
-
-   IMPORTANT: The sidebar inner div uses width:100% with NO width transition.
-   Width animation is owned entirely by the wrapper in MainLayout so the
-   sidebar and navbar always move in perfect sync.
 ══════════════════════════════════════════════════ */
 const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstance = false }) => {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // Track which accordion items are expanded — keyed by path
+  const [expandedItems, setExpandedItems] = useState(() => {
+    // Auto-expand the item whose path matches current location on mount
+    const initial = {};
+    const allItems = Object.values(MENU_ITEMS).flat();
+    allItems.forEach(item => {
+      if (item.children && location.pathname === item.path) {
+        initial[item.path] = true;
+      }
+    });
+    return initial;
+  });
+
+  const toggleExpand = (path) =>
+    setExpandedItems(prev => ({ ...prev, [path]: !prev[path] }));
 
   const handleLogoutConfirm = () => {
     setShowLogoutModal(false);
@@ -77,70 +176,146 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
     navigate('/login');
   };
 
-  const getMenuItems = () => {
-    const base = [{ icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' }];
-    if (user?.role === 'manager') return [...base,
-      { icon: Users,         label: 'User Management', path: '/user-management' },
-      { icon: UserPlus,      label: 'Patients',         path: '/patients'        },
-      { icon: Stethoscope,   label: 'Doctors',          path: '/doctors'         },
-      { icon: ClipboardList, label: 'Services',         path: '/services'        },
-      { icon: Calendar,      label: 'Appointments',     path: '/appointments'    },
-      { icon: Activity,      label: 'Activity Logs',    path: '/activity'        },
-      { icon: Settings,      label: 'Settings',         path: '/settings'        },
-    ];
-    if (user?.role === 'admin') return [...base,
-      { icon: Users,         label: 'User Management', path: '/acc-management' },
-      { icon: Activity,      label: 'Activity Logs',    path: '/admin-activity'        },
-    ];
+  const menuItems = MENU_ITEMS[user?.role] ?? [
+    { type: 'divider', label: 'Overview' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+  ];
 
-    if (user?.role === 'staff') return [...base,
-      {icon:  ShoppingCart, label: 'POS', path: '/pos' },
-      { icon: Calendar,      label: 'Appointments', path: '/staff-appointments' },
-      { icon: ClipboardList, label: 'Queue',        path: '/queue'              },
-      { icon: Stethoscope,   label: 'Doctors',      path: '/staff-doctors'      },
-      { icon: Settings,      label: 'Settings',     path: '/staff-settings'     },
-    ];
-    if (user?.role === 'doctor') return [...base,
-      { icon: ClipboardList, label: 'Consultations', path: '/consultations'   },
-      { icon: Calendar,      label: 'My Schedule',   path: '/schedule'        },
-      { icon: UserPlus,      label: 'Patients',      path: '/Doctorpatients'  },
-      { icon: CalendarCheck,      label: 'Availability',  path: '/availability'    },
-      { icon: Settings,      label: 'Settings',      path: '/doctor-settings' },
-    ];
-    if (user?.role === 'patient') return [...base,
-      { icon: Calendar,      label: 'Book Appointments', path: '/my-appointments'  },
-      { icon: ClipboardList, label: 'Medical Records', path: '/records'          },
-      { icon: Settings,      label: 'Settings',        path: '/patient-settings' },
-    ];
-    return base;
-  };
-
-  const menuItems = getMenuItems();
   const roleColors = {
     admin:   'from-violet-500 to-blue-600',
     staff:   'from-teal-500 to-blue-500',
     doctor:  'from-blue-500 to-indigo-600',
     patient: 'from-sky-400 to-blue-500',
+    manager: 'from-purple-500 to-indigo-600',
   };
   const roleGradient = roleColors[user?.role] || 'from-blue-500 to-blue-700';
 
-  // Shared fade transition for text/labels
   const fadeStyle = (slim) => ({
-    opacity:   slim ? 0 : 1,
-    maxWidth:  slim ? 0 : 300,
-    overflow:  'hidden',
+    opacity:    slim ? 0 : 1,
+    maxWidth:   slim ? 0 : 300,
+    overflow:   'hidden',
     whiteSpace: 'nowrap',
     transition: 'opacity 200ms ease, max-width 280ms cubic-bezier(0.4, 0, 0.2, 1)',
   });
 
-  /* ── Desktop sidebar content ── */
+  /* ── Shared nav list ── */
+  const NavItems = ({ slim = false, onItemClick }) => (
+    <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
+      {menuItems.map((item, index) => {
+
+        // ── Section divider ──────────────────────────────────────────────
+        if (item.type === 'divider') {
+          return <SectionDivider key={`divider-${index}`} label={item.label} slim={slim} />;
+        }
+
+        const Icon        = item.icon;
+        const hasChildren = !!(item.children && item.children.length > 0);
+        const isExpanded  = expandedItems[item.path] ?? false;
+        const isActive    = location.pathname === item.path;
+
+        // ── Item WITH children (accordion) ──────────────────────────────
+        if (hasChildren) {
+          return (
+            <div key={item.path}>
+              {/* Parent button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!slim) toggleExpand(item.path);
+                  // In slim/collapsed mode navigate directly (no room for sub-items)
+                  else { navigate(item.path); onItemClick?.(); }
+                }}
+                title={slim ? item.label : undefined}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors duration-150
+                  ${isActive
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
+              >
+                <Icon
+                  className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`}
+                  style={{ width: 18, height: 18 }}
+                />
+                <span style={fadeStyle(slim)} className="text-sm font-semibold flex-1 text-left">
+                  {item.label}
+                </span>
+                {/* Chevron — only when not slim */}
+                {!slim && (
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200
+                      ${isActive ? 'text-blue-200' : 'text-gray-300'}
+                      ${isExpanded ? 'rotate-90' : 'rotate-0'}`}
+                  />
+                )}
+              </button>
+
+              {/* Children — slide open when expanded & not slim */}
+              {!slim && isExpanded && (
+                <div className="ml-9 mt-1 space-y-0.5 border-l-2 border-gray-100 pl-3">
+                  {item.children.map((child, idx) => {
+                    const childHash   = `#${child.key}`;
+                    const isChildActive =
+                      location.pathname === item.path &&
+                      (location.hash === childHash || (!location.hash && idx === 0));
+
+                    return (
+                      <NavLink
+                        key={child.key}
+                        to={`${item.path}${childHash}`}
+                        onClick={onItemClick}
+                        className={`block px-3 py-2 text-xs rounded-lg transition-colors
+                          ${isChildActive
+                            ? 'bg-blue-50 text-blue-600 font-bold border-l-2 border-blue-500 -ml-[2px] pl-[calc(0.75rem+2px)]'
+                            : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50 font-semibold'}`}
+                      >
+                        {child.label}
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // ── Plain nav link (no children) ─────────────────────────────────
+        return (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            title={slim ? item.label : undefined}
+            onClick={onItemClick}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors duration-150
+              ${isActive
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <Icon
+                  className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`}
+                  style={{ width: 18, height: 18 }}
+                />
+                <span style={fadeStyle(slim)} className="text-sm font-semibold flex-1">
+                  {item.label}
+                </span>
+                {!slim && isActive && (
+                  <ChevronRight className="w-3.5 h-3.5 text-blue-200 flex-shrink-0" />
+                )}
+              </>
+            )}
+          </NavLink>
+        );
+      })}
+    </nav>
+  );
+
+  /* ── Desktop sidebar ── */
   const DesktopContent = () => {
     const slim = collapsed;
     return (
-      // width: 100% — fills the wrapper div in MainLayout exactly
-      // overflow-hidden clips content during collapse
       <div className="flex flex-col h-full bg-white border-r border-gray-200 overflow-hidden w-full">
-
         {/* Logo */}
         <div className="flex items-center gap-3 px-4 pt-7 pb-6">
           <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shadow-md flex-shrink-0">
@@ -169,44 +344,7 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
           </div>
         </div>
 
-        {/* Nav label */}
-        <div style={fadeStyle(slim)}>
-          <p className="px-5 mb-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-            Navigation
-          </p>
-        </div>
-
-        {/* Nav items */}
-        <nav className="flex-1 px-3 space-y-1 overflow-y-auto overflow-x-hidden">
-          {menuItems.map(item => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                title={slim ? item.label : undefined}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors duration-150
-                  ${isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <Icon className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`} style={{ width: 18, height: 18 }} />
-                    <span style={fadeStyle(slim)} className="text-sm font-semibold">
-                      {item.label}
-                    </span>
-                    {!slim && isActive && (
-                      <ChevronRight className="w-3.5 h-3.5 text-blue-200 flex-shrink-0" />
-                    )}
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
-        </nav>
+        <NavItems slim={slim} />
 
         {/* Logout */}
         <div className="mx-3 mb-5 mt-3">
@@ -224,7 +362,7 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
     );
   };
 
-  /* ── Mobile drawer content (always expanded) ── */
+  /* ── Mobile drawer ── */
   const MobileContent = () => (
     <div className="flex flex-col h-full w-64 bg-white border-r border-gray-200">
       {/* Logo + close */}
@@ -263,36 +401,7 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
         </div>
       </div>
 
-      <p className="px-5 mb-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-        Navigation
-      </p>
-
-      <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-        {menuItems.map(item => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              onClick={onMobileClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors duration-150
-                ${isActive
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <Icon className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`} style={{ width: 18, height: 18 }} />
-                  <span className="text-sm font-semibold flex-1">{item.label}</span>
-                  {isActive && <ChevronRight className="w-3.5 h-3.5 text-blue-200" />}
-                </>
-              )}
-            </NavLink>
-          );
-        })}
-      </nav>
+      <NavItems onItemClick={onMobileClose} />
 
       <div className="mx-3 mb-5 mt-3">
         <div className="h-px bg-gray-100 mb-3" />
@@ -309,16 +418,15 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
 
   return (
     <>
-      {/* Desktop content — skip when this instance is mounted for mobile only */}
       {!isMobileInstance && <DesktopContent />}
 
-      {/* Mobile drawer backdrop */}
+      {/* Mobile backdrop */}
       <div
         className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
         style={{
-          opacity: mobileOpen ? 1 : 0,
+          opacity:       mobileOpen ? 1 : 0,
           pointerEvents: mobileOpen ? 'auto' : 'none',
-          transition: 'opacity 300ms ease',
+          transition:    'opacity 300ms ease',
         }}
         onClick={onMobileClose}
       />
@@ -326,7 +434,7 @@ const Sidebar = ({ collapsed = false, mobileOpen, onMobileClose, isMobileInstanc
       <div
         className="fixed top-0 left-0 z-50 h-full md:hidden"
         style={{
-          transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transform:  mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >

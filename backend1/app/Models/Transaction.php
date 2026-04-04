@@ -9,7 +9,9 @@ class Transaction extends Model
     protected $primaryKey = 'transaction_id';
 
     protected $fillable = [
+        'transaction_number',
         'patient_id',
+        'queue_entry_id',
         'staff_id',
         'subtotal',
         'discount',
@@ -37,6 +39,11 @@ class Transaction extends Model
     public function staff()
     {
         return $this->belongsTo(clinic_users::class, 'staff_id', 'user_id');
+    }
+
+    public function queueEntry()
+    {
+        return $this->belongsTo(queue_entries::class, 'queue_entry_id', 'queue_entry_id');
     }
 
     public function items()

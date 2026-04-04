@@ -15,9 +15,7 @@ import axios from 'axios';
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
 
 const STATUS_CFG = {
-  available: { label:'Available', dot:'bg-emerald-500', text:'text-emerald-700', bg:'bg-emerald-50',  border:'border-emerald-200' },
-  on_leave:  { label:'On Leave',  dot:'bg-amber-500',   text:'text-amber-700',  bg:'bg-amber-50',   border:'border-amber-200'  },
-  off_duty:  { label:'Off Duty',  dot:'bg-red-400',     text:'text-red-600',    bg:'bg-red-50',     border:'border-red-200'    },
+  available: { label:'Available', dot:'bg-emerald-500', text:'text-emerald-700', bg:'bg-emerald-50', border:'border-emerald-200' },
 };
 
 const SLOT_DURATIONS = [15, 20, 30, 45, 60];
@@ -71,14 +69,14 @@ const dateStatus = (iso, schedule) => {
   const booked = s.slots.reduce((a,sl) => a + (sl.booked||0), 0);
   if (total === 0) return 'none';
   if (booked >= total) return 'full';
-  if (booked > 0) return 'partial';
+  if (booked > 0) return 'booked';
   return 'available';
 };
 
 const DATE_STATUS_STYLE = {
   available:{ bg:'bg-emerald-500', text:'text-white',      dot:'🟢', label:'Available'    },
   full:     { bg:'bg-red-500',     text:'text-white',      dot:'🔴', label:'Fully Booked' },
-  partial:  { bg:'bg-amber-400',   text:'text-amber-900',  dot:'🟡', label:'Partial'      },
+  booked:   { bg:'bg-amber-400',   text:'text-amber-900',  dot:'🟡', label:'Booked'       },
   none:     { bg:'',               text:'text-gray-400',   dot:'⚪', label:'No Schedule'  },
 };
 
@@ -284,7 +282,7 @@ function DateEditorModal({ iso, schedule, onClose, onSave, onClear }) {
                 <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full
                   ${status==='available'?'bg-emerald-100 text-emerald-700'
                   :status==='full'      ?'bg-red-100 text-red-600'
-                  :status==='partial'   ?'bg-amber-100 text-amber-700'
+                  :status==='booked'    ?'bg-amber-100 text-amber-700'
                   :                      'bg-gray-100 text-gray-400'}`}>
                   {sstyle.dot} {sstyle.label}
                 </span>
@@ -487,7 +485,7 @@ export default function AvailabilityPage() {
   const doctorId        = user?.user_id ? `DR-${String(user.user_id).padStart(4,'0')}` : '—';
   const doctorSpecialty = user?.role ?? 'General Medicine';
 
-  const [doctorStatus, setDoctorStatus] = useState('available');
+  const doctorStatus = 'available';
   const [schedule,     setSchedule]     = useState({});
   const [loading,      setLoading]      = useState(false);
   const [calYear,      setCalYear]      = useState(today.getFullYear());
@@ -586,7 +584,7 @@ export default function AvailabilityPage() {
         const booked = data.slots.reduce((a,s) => a + (s.booked||0), 0);
         return { iso, data, totalSlots:total, bookedSlots:booked, remaining:total-booked, status:dateStatus(iso,schedule) };
       })
-      .filter(({ status }) => status === 'available' || status === 'full'),
+      .filter(({ status }) => status === 'available' || status === 'booked' || status === 'full'),
   [schedule]);
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -635,15 +633,7 @@ export default function AvailabilityPage() {
             </div>
             <div className="flex flex-col items-end gap-2">
               <p className="text-white/60 text-xs font-bold uppercase tracking-wide">Status</p>
-              <div className="flex gap-2">
-                {Object.entries(STATUS_CFG).map(([key,cfg]) => (
-                  <button key={key} onClick={() => setDoctorStatus(key)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all
-                      ${doctorStatus===key?`${cfg.bg} ${cfg.text} ${cfg.border}`:'bg-white/10 text-white/60 border-white/20 hover:bg-white/20'}`}>
-                    {cfg.label}
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs font-bold text-white/90">Managed automatically by schedule and bookings</p>
             </div>
           </div>
         </div>
@@ -707,7 +697,7 @@ export default function AvailabilityPage() {
                       {status!=='none' && !past && (
                         <span className="text-[9px] mt-0.5 opacity-75 leading-none">
                           {status==='full' ? 'Full'
-                            : status==='partial' ? 'Partial'
+                          : status==='booked' ? 'Booked'
                             : `${schedule[iso]?.slots.reduce((a,s)=>a+slotCount(s),0)-schedule[iso]?.slots.reduce((a,s)=>a+(s.booked||0),0)} left`}
                         </span>
                       )}
@@ -765,7 +755,7 @@ export default function AvailabilityPage() {
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full
                       ${status==='available' ? 'bg-emerald-100 text-emerald-700'
                       : status==='full'      ? 'bg-red-100 text-red-600'
-                      : status==='partial'   ? 'bg-amber-100 text-amber-700'
+                      : status==='booked'    ? 'bg-amber-100 text-amber-700'
                       :                        'bg-gray-100 text-gray-400'}`}>
                       {sstyle.dot} {sstyle.label}
                     </span>

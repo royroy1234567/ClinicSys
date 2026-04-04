@@ -902,9 +902,9 @@ const fetchServices = useCallback(async () => {
                 <SelectBox value={statFil} onChange={v => { setStatFil(v); setCurrentPage(1); }}
                   options={[{ value: 'all', label: 'All Status' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} />
               </div>
-              <Button variant="outline" size="sm" onClick={handleReset}><RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Reset</Button>
+              
               <Button variant="outline" size="sm" onClick={fetchServices} disabled={loading}>
-                {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Reset
               </Button>
               <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
                 <button onClick={() => setViewMode('table')} className={`p-2 transition-colors ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-50'}`}><List className="w-4 h-4" /></button>
@@ -980,11 +980,11 @@ const fetchServices = useCallback(async () => {
                         <td className="py-3 px-4"><StatusBadge status={svc.status} /></td>
                         {/* Single Manage button */}
                         <td className="py-3 px-4">
-                          <Button size="sm" variant="outline"
-                            className="h-7 px-3 text-xs gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-400"
+                          <button size="sm" variant="outline"
+                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-all"
                             onClick={() => setModal({ type: 'password-gate', service: svc })}>
                             <UserCog className="w-3.5 h-3.5" /> Manage
-                          </Button>
+                          </button>
                         </td>
                       </tr>
                     ))}

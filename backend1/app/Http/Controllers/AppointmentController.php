@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\DoctorSchedule;
 use App\Models\ScheduleSlot;
+use App\Models\queue_entries;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -19,7 +20,7 @@ class AppointmentController extends Controller
         $request->validate([
             'doctor_id'        => 'required|integer|exists:clinic_users,user_id',
             'service_id'       => 'nullable|integer|exists:services,service_id',
-            'appointment_date' => 'required|date_format:Y-m-d|after_or_equal:today',
+            'appointment_date' => 'required|date_format:Y-m-d|after:today',
             'appointment_time' => 'required|date_format:H:i',
             'reason'           => 'required|string|max:500',
             'notes'            => 'nullable|string|max:1000',
@@ -29,6 +30,17 @@ class AppointmentController extends Controller
         $date      = $request->appointment_date;
         $time      = $request->appointment_time;
         $doctorId  = $request->doctor_id;
+
+        $hasActiveAppointment = Appointment::where('patient_id', $patientId)
+            ->where('status', 'scheduled')
+            ->whereDate('appointment_date', '>=', now()->toDateString())
+            ->exists();
+
+        if ($hasActiveAppointment) {
+            return response()->json([
+                'message' => 'You already have an active appointment. Complete, cancel, or mark no-show before booking another.',
+            ], 422);
+        }
 
         // Find the schedule for this doctor + date
         $schedule = DoctorSchedule::where('user_id', $doctorId)
@@ -102,6 +114,33 @@ class AppointmentController extends Controller
      */
     public function index(Request $request)
 {
+    $noShowAppointmentIds = queue_entries::whereNotNull('appointment_id')
+        ->where('status', 'no-show')
+        ->pluck('appointment_id')
+        ->unique()
+        ->values()
+        ->all();
+
+    if (!empty($noShowAppointmentIds)) {
+        Appointment::whereIn('appointment_id', $noShowAppointmentIds)
+            ->where('status', '!=', 'no_show')
+            ->update(['status' => 'no_show']);
+    }
+
+    $completedAppointmentIds = queue_entries::whereNotNull('appointment_id')
+        ->where('status', 'completed')
+        ->when(!empty($noShowAppointmentIds), fn($q) => $q->whereNotIn('appointment_id', $noShowAppointmentIds))
+        ->pluck('appointment_id')
+        ->unique()
+        ->values()
+        ->all();
+
+    if (!empty($completedAppointmentIds)) {
+        Appointment::whereIn('appointment_id', $completedAppointmentIds)
+            ->whereNotIn('status', ['completed', 'no_show'])
+            ->update(['status' => 'completed']);
+    }
+
     $user = $request->user();
     $isStaff = in_array($user->role, ['Admin', 'Staff', 'Doctor']); // adjust roles to match yours
 

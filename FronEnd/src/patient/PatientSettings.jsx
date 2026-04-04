@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import LogoutConfirmModal from '../components/common/LogoutConfirmModal';
 import {
   User, Lock, Bell, Shield, LogOut, Info,
   Check, X, Eye, EyeOff, Phone, Mail,
@@ -359,106 +360,12 @@ function PrivacyModal({ privacy, onChange, onClose }) {
   );
 }
 
-/* ══════════════════════════════════════════════════
-   ACCOUNT INFO MODAL
-══════════════════════════════════════════════════ */
-function AccountModal({ patient, onClose }) {
-  return (
-    <Modal onClose={onClose} icon={Info} iconBg="bg-gradient-to-r from-violet-600 to-purple-700"
-      title="Account Information" subtitle="Your system account details.">
-      {[
-        [Hash,     'Patient ID',     `PT-${String(patient.id).padStart(5, '0')}`],
-        [Mail,     'Email Address',  patient.email                               ],
-        [Calendar, 'Date of Birth',  patient.dob                                 ],
-        [Clock,    'Account Since',  patient.created_at
-                                       ? new Date(patient.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
-                                       : '—'
-        ],
-      ].map(([Icon, label, value]) => (
-        <div key={label} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
-          <div className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
-            <Icon className="w-3.5 h-3.5 text-gray-400" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-            <p className="text-sm font-semibold text-gray-800 mt-0.5">{value || '—'}</p>
-          </div>
-        </div>
-      ))}
-    </Modal>
-  );
-}
 
 /* ══════════════════════════════════════════════════
    ACCOUNT ACTIONS MODAL
 ══════════════════════════════════════════════════ */
 function AccountActionsModal({ onClose, onLogout }) {
-  const [confirmLogout,     setConfirmLogout]     = useState(false);
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
-
-  return (
-    <Modal onClose={onClose} icon={LogOut} iconBg="bg-gradient-to-r from-red-500 to-rose-600"
-      title="Account Actions" subtitle="Manage your session and account status.">
-
-      {!confirmLogout ? (
-        <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-2xl">
-          <div>
-            <p className="text-sm font-bold text-gray-800">Sign Out</p>
-            <p className="text-xs text-gray-400 mt-0.5">End your current session.</p>
-          </div>
-          <button onClick={() => setConfirmLogout(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all shadow-sm">
-            <LogOut className="w-3.5 h-3.5" /> Logout
-          </button>
-        </div>
-      ) : (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3">
-          <p className="text-sm font-bold text-red-800 text-center">Are you sure you want to sign out?</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setConfirmLogout(false)}
-              className="py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 transition-all">
-              Cancel
-            </button>
-            <button onClick={() => { onLogout(); onClose(); }}
-              className="py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all">
-              Yes, Sign Out
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!confirmDeactivate ? (
-        <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-2xl">
-          <div>
-            <p className="text-sm font-bold text-gray-800">Deactivate Account</p>
-            <p className="text-xs text-gray-400 mt-0.5">Temporarily disable your patient account.</p>
-          </div>
-          <button onClick={() => setConfirmDeactivate(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-gray-300 text-gray-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 text-xs font-bold transition-all">
-            <UserX className="w-3.5 h-3.5" /> Deactivate
-          </button>
-        </div>
-      ) : (
-        <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl space-y-3">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-orange-500 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-orange-700 font-semibold">
-              Deactivating your account will suspend access to appointments and records. Contact the clinic to reactivate.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => setConfirmDeactivate(false)}
-              className="py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 transition-all">
-              Cancel
-            </button>
-            <button className="py-2.5 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-all">
-              Yes, Deactivate
-            </button>
-          </div>
-        </div>
-      )}
-    </Modal>
-  );
+  return <LogoutConfirmModal open onConfirm={onLogout} onCancel={onClose} />;
 }
 
 /* ══════════════════════════════════════════════════
@@ -618,7 +525,7 @@ export default function PatientSettingsPage() {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-black">{fullName}</h2>
-              <p className="text-blue-200 text-sm">{patientId} · {patient.email}</p>
+              <p className="text-blue-200 text-sm">{patient.email}</p>
             </div>
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 rounded-xl text-xs font-bold text-blue-100 flex-shrink-0">
               <User className="w-3.5 h-3.5" /> Patient
@@ -673,16 +580,11 @@ export default function PatientSettingsPage() {
 
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Account</p>
 
-          <SettingItem
-            icon={Info} iconBg="bg-violet-600"
-            label="Account Information"
-            desc={`${patientId} · ${patient.email}`}
-            onClick={() => setModal('account')}
-          />
+       
           <SettingItem
             icon={LogOut} iconBg="bg-red-100"
-            label="Logout / Account Actions"
-            desc="Sign out or deactivate your patient account."
+            label="Account Actions"
+            desc="Deactivate your patient account."
             onClick={() => setModal('actions')}
             danger
           />
@@ -725,9 +627,6 @@ export default function PatientSettingsPage() {
           onChange={(k, v) => { setPrivacy(p => ({ ...p, [k]: v })); showToast(`Privacy setting ${v ? 'enabled' : 'disabled'}.`); }}
           onClose={close}
         />
-      )}
-      {modal === 'account' && (
-        <AccountModal patient={patient} onClose={close} />
       )}
       {modal === 'actions' && (
         <AccountActionsModal

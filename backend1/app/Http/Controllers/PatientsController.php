@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\patients;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
 
 class PatientsController extends Controller
@@ -31,14 +32,23 @@ class PatientsController extends Controller
         $patient = $request->user();
 
         $request->validate([
-            'first_name'             => 'sometimes|string|max:255',
-            'middle_name'            => 'nullable|string|max:255',
-            'last_name'              => 'sometimes|string|max:255',
-            'dob'                    => 'sometimes|date|before:today',
+            'first_name'             => ['sometimes', 'string', 'max:255', 'regex:/^([^\d]+)?$/'],
+            'middle_name'            => ['nullable', 'string', 'max:255', 'regex:/^([^\d]+)?$/'],
+            'last_name'              => ['sometimes', 'string', 'max:255', 'regex:/^([^\d]+)?$/'],
+            'dob'                    => [
+                'sometimes',
+                'date',
+                'before_or_equal:today',
+                function ($attribute, $value, $fail) {
+                    if (Carbon::parse($value)->age < 18) {
+                        $fail('Patient must be at least 18 years old.');
+                    }
+                },
+            ],
             'gender'                 => 'sometimes|string',
             'civil_status'           => 'nullable|string',
             'nationality'            => 'nullable|string',
-            'mobile'                 => 'sometimes|string|max:20',
+            'mobile'                 => ['sometimes', 'string', 'regex:/^\+63\d{10}$/'],
             'street'                 => 'sometimes|string',
             'city'                   => 'sometimes|string',
             'province'               => 'sometimes|string',
@@ -46,9 +56,16 @@ class PatientsController extends Controller
             'allergies'              => 'nullable|string',
             'conditions'             => 'nullable|string',
             'medications'            => 'nullable|string',
-            'emergency_name'         => 'sometimes|string|max:255',
+            'emergency_name'         => ['sometimes', 'string', 'max:255', 'regex:/^([^\d]+)?$/'],
             'emergency_relationship' => 'sometimes|string|max:255',
-            'emergency_contact'      => 'sometimes|string|max:20',
+            'emergency_contact'      => ['sometimes', 'string', 'regex:/^\+63\d{10}$/'],
+        ], [
+            'first_name.regex' => 'Numbers are not allowed in first name.',
+            'middle_name.regex' => 'Numbers are not allowed in middle name.',
+            'last_name.regex' => 'Numbers are not allowed in last name.',
+            'emergency_name.regex' => 'Numbers are not allowed in emergency contact name.',
+            'mobile.regex' => 'Mobile number must be in +63 format followed by 10 digits.',
+            'emergency_contact.regex' => 'Emergency contact number must be in +63 format followed by 10 digits.',
         ]);
 
         // Never allow email or password update through this endpoint
@@ -113,15 +130,24 @@ class PatientsController extends Controller
     public function register(Request $request)
     {
         $request->validate([
-            'first_name'             => 'required|string|max:255',
-            'middle_name'            => 'nullable|string|max:255',
-            'last_name'              => 'required|string|max:255',
-            'dob'                    => 'required|date|before:today',
+            'first_name'             => ['required', 'string', 'max:255', 'regex:/^[^\d]+$/'],
+            'middle_name'            => ['nullable', 'string', 'max:255', 'regex:/^([^\d]+)?$/'],
+            'last_name'              => ['required', 'string', 'max:255', 'regex:/^[^\d]+$/'],
+            'dob'                    => [
+                'required',
+                'date',
+                'before_or_equal:today',
+                function ($attribute, $value, $fail) {
+                    if (Carbon::parse($value)->age < 18) {
+                        $fail('You must be at least 18 years old to register.');
+                    }
+                },
+            ],
             'age'                    => 'required|integer|min:0',
             'gender'                 => 'required|string',
             'civil_status'           => 'nullable|string',
             'nationality'            => 'nullable|string',
-            'mobile'                 => 'required|string|max:20',
+            'mobile'                 => ['required', 'string', 'regex:/^\+63\d{10}$/'],
             'email'                  => 'required|string|email|unique:patients,email',
             'street'                 => 'required|string',
             'city'                   => 'required|string',
@@ -131,11 +157,18 @@ class PatientsController extends Controller
             'allergies'              => 'nullable|string',
             'conditions'             => 'nullable|string',
             'medications'            => 'nullable|string',
-            'emergency_name'         => 'required|string|max:255',
+            'emergency_name'         => ['required', 'string', 'max:255', 'regex:/^[^\d]+$/'],
             'emergency_relationship' => 'required|string|max:255',
-            'emergency_contact'      => 'required|string|max:20',
+            'emergency_contact'      => ['required', 'string', 'regex:/^\+63\d{10}$/'],
             'agree_privacy'          => 'accepted',
             'agree_storage'          => 'accepted',
+        ], [
+            'first_name.regex' => 'Numbers are not allowed in first name.',
+            'middle_name.regex' => 'Numbers are not allowed in middle name.',
+            'last_name.regex' => 'Numbers are not allowed in last name.',
+            'emergency_name.regex' => 'Numbers are not allowed in emergency contact name.',
+            'mobile.regex' => 'Mobile number must be in +63 format followed by 10 digits.',
+            'emergency_contact.regex' => 'Emergency contact number must be in +63 format followed by 10 digits.',
         ]);
 
         $patient = patients::create([

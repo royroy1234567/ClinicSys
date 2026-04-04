@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { useAuth } from '../context/AuthContext';
+import LogoutConfirmModal from '../components/common/LogoutConfirmModal';
 import {
   User, Lock, Bell, Monitor, Clock, LogOut,
   Shield, Check, X, Eye, EyeOff, Phone, Mail,
@@ -279,109 +280,12 @@ function NotifModal({ notif, onChange, onClose }) {
   );
 }
 
-/* ══════════════════════════════════════════════════
-   INTERFACE MODAL
-══════════════════════════════════════════════════ */
-function InterfaceModal({ theme, setTheme, language, setLanguage, onClose, onApply }) {
-  const [localTheme, setLocalTheme] = useState(theme);
-  const [localLang,  setLocalLang]  = useState(language);
-  return (
-    <Modal onClose={onClose} icon={Monitor} iconBg="bg-gradient-to-r from-teal-500 to-emerald-600"
-      title="Interface Preferences" subtitle="Customize your display and language settings.">
-      <div className="space-y-5">
-        <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2.5">Theme Mode</p>
-          <div className="grid grid-cols-2 gap-2">
-            {[{ v: 'light', label: 'Light Mode', Icon: Sun }, { v: 'dark', label: 'Dark Mode', Icon: Moon }].map(({ v, label, Icon }) => (
-              <button key={v} onClick={() => setLocalTheme(v)}
-                className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border-2 text-sm font-bold transition-all
-                  ${localTheme === v ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}>
-                <Icon className="w-4 h-4" /> {label}
-                {localTheme === v && <Check className="w-3.5 h-3.5 ml-auto" />}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2.5">Language</p>
-          <div className="relative">
-            <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            <select value={localLang} onChange={e => setLocalLang(e.target.value)}
-              className="w-full appearance-none pl-10 pr-8 py-2.5 text-sm font-bold border border-gray-200 rounded-xl bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer">
-              {['English', 'Filipino', 'Cebuano'].map(l => <option key={l}>{l}</option>)}
-            </select>
-            <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none rotate-90" />
-          </div>
-        </div>
-        <div className="pt-1 border-t border-gray-100 flex gap-2">
-          <button onClick={() => { setTheme(localTheme); setLanguage(localLang); onApply(); onClose(); }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-sm">
-            <Check className="w-3.5 h-3.5" /> Apply Changes
-          </button>
-          <button onClick={onClose}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 border-gray-200 text-gray-500 text-xs font-bold hover:bg-gray-50 transition-all">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
 /* ══════════════════════════════════════════════════
    SESSION MODAL
 ══════════════════════════════════════════════════ */
 function SessionModal({ session, onClose, onLogout }) {
-  const [confirmLogout, setConfirmLogout] = useState(false);
-  return (
-    <Modal onClose={onClose} icon={Clock} iconBg="bg-gradient-to-r from-violet-600 to-purple-700"
-      title="Session Management" subtitle="Your current login session details.">
-      <div className="space-y-3">
-        {[
-          [Clock,      'Last Login',       session.lastLogin ?? '—'],
-          [Laptop,     'Device / Browser', session.device    ?? '—'],
-          [Smartphone, 'IP Address',       session.ip        ?? '—'],
-        ].map(([Icon, label, value]) => (
-          <div key={label} className="flex items-start gap-3 p-3.5 bg-gray-50 rounded-2xl border border-gray-100">
-            <div className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center flex-shrink-0">
-              <Icon className="w-3.5 h-3.5 text-gray-400" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-              <p className="text-sm font-semibold text-gray-800 mt-0.5">{value}</p>
-            </div>
-          </div>
-        ))}
-
-        {!confirmLogout ? (
-          <div className="flex items-center justify-between p-4 bg-red-50 border border-red-100 rounded-2xl mt-2">
-            <div>
-              <p className="text-sm font-bold text-red-800">Sign Out</p>
-              <p className="text-xs text-red-500 mt-0.5">End your current session.</p>
-            </div>
-            <button onClick={() => setConfirmLogout(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all shadow-sm">
-              <LogOut className="w-3.5 h-3.5" /> Logout
-            </button>
-          </div>
-        ) : (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3">
-            <p className="text-sm font-bold text-red-800 text-center">Are you sure you want to sign out?</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setConfirmLogout(false)}
-                className="py-2.5 rounded-2xl border-2 border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 transition-all">
-                Cancel
-              </button>
-              <button onClick={() => { onLogout(); onClose(); }}
-                className="py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-all shadow-sm">
-                Yes, Sign Out
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </Modal>
-  );
+  return <LogoutConfirmModal open onConfirm={onLogout} onCancel={onClose} />;
 }
 
 /* ══════════════════════════════════════════════════
@@ -418,8 +322,6 @@ export default function StaffSettingsPage() {
   const [profile,  setProfile]  = useState(null);
   const [session,  setSession]  = useState({ lastLogin: '—', device: '—', ip: '—' });
   const [notif,    setNotif]    = useState({ appointments: true, queue: true, system: false });
-  const [theme,    setTheme]    = useState('light');
-  const [language, setLanguage] = useState('English');
   const [modal,    setModal]    = useState(null);
   const [toast,    setToast]    = useState(null);
   const [saving,   setSaving]   = useState(false);
@@ -540,10 +442,9 @@ export default function StaffSettingsPage() {
 
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Preferences</p>
           <SettingItem icon={Bell}    iconBg="bg-amber-500" label="Notification Preferences" desc="Appointments, queue updates, and system alerts." badge={`${activeNotifCount} active`} onClick={() => setModal('notif')} />
-          <SettingItem icon={Monitor} iconBg="bg-teal-600"  label="Interface Preferences"    desc={`${theme === 'light' ? 'Light Mode' : 'Dark Mode'} · ${language}`} onClick={() => setModal('interface')} />
 
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 pt-3 pb-1">Session</p>
-          <SettingItem icon={Clock}  iconBg="bg-violet-600" label="Session Information" desc={`Last login: ${session.lastLogin}`} onClick={() => setModal('session')} />
+          
           <SettingItem icon={LogOut} iconBg="bg-red-100"    label="Sign Out" desc="End your current session and return to the login page." onClick={() => setModal('session')} danger />
         </div>
 
@@ -563,9 +464,7 @@ export default function StaffSettingsPage() {
           onClose={close}
         />
       )}
-      {modal === 'interface' && (
-        <InterfaceModal theme={theme} setTheme={setTheme} language={language} setLanguage={setLanguage} onApply={() => showToast('Interface preferences applied.')} onClose={close} />
-      )}
+  
       {modal === 'session' && (
         <SessionModal session={session} onClose={close} onLogout={handleLogout} />
       )}
