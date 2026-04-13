@@ -12,6 +12,7 @@ use App\Http\Controllers\QueueEntriesController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\ClinicSettingController;
 use App\Http\Controllers\ManagerAnalyticsController;
+use App\Http\Controllers\AdminSystemController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,9 @@ Route::get('/test', function () {
 // Auth
 Route::post('/auth/login',  [AuthController::class, 'login']);
 Route::post('/auth/logout', [AuthController::class, 'logout']);
+Route::post('/auth/forgot-password/send-otp', [AuthController::class, 'sendForgotPasswordOtp']);
+Route::post('/auth/forgot-password/verify-otp', [AuthController::class, 'verifyForgotPasswordOtp']);
+Route::post('/auth/forgot-password/reset', [AuthController::class, 'resetForgotPassword']);
 
 // Google OAuth
 Route::get('/auth/google',          [GoogleController::class, 'redirectToGoogle']);
@@ -37,7 +41,10 @@ Route::get('/auth/google/callback', [GoogleController::class, 'handleGoogleCallb
 // Patient public routes
 Route::post('/patients/register',    [PatientsController::class, 'register']);
 Route::post('/patients/check-email', [PatientsController::class, 'checkEmail']);
+Route::post('/patients/send-verification-code', [PatientsController::class, 'sendEmailVerificationCode']);
+Route::post('/patients/verify-verification-code', [PatientsController::class, 'verifyEmailVerificationCode']);
 Route::get('/clinic-settings', [ClinicSettingController::class, 'index']);
+Route::get('/landing-stats', [ManagerAnalyticsController::class, 'landingStats']);
 
 /*
 |--------------------------------------------------------------------------
@@ -67,6 +74,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Patients
     Route::get('/patients',                          [PatientsController::class, 'index']);
+    Route::get('/patients/medical-history',          [PatientsController::class, 'medicalHistoryIndex']);
     Route::patch('/patients/{id}/toggle-status',     [PatientsController::class, 'toggleStatus']);  // ← new
     Route::get('/patient/profile',                   [PatientsController::class, 'profile']);
     Route::put('/patient/profile',                   [PatientsController::class, 'updateProfile']);
@@ -85,6 +93,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',        [AppointmentController::class, 'index']);
         Route::post('/',       [AppointmentController::class, 'store']);
         Route::delete('/{id}', [AppointmentController::class, 'destroy']);
+        Route::patch('/{id}/reschedule', [AppointmentController::class, 'reschedule']);
     });
 
     Route::prefix('queue-entries')->group(function () {
@@ -98,6 +107,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/consultations/queue-entry/{queueEntryId}', [ConsultationController::class, 'byQueueEntry']);
     Route::put('/consultations/queue-entry/{queueEntryId}', [ConsultationController::class, 'upsertByQueueEntry']);
     Route::post('/consultations/{consultationId}/rate', [ConsultationController::class, 'rate']);
+    Route::post('/consultations/{consultationId}/respond-feedback', [ConsultationController::class, 'respondToFeedback']);
 
     // Transactions (POS)
     Route::prefix('transactions')->group(function () {
@@ -108,4 +118,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::get('/manager/analytics/dashboard', [ManagerAnalyticsController::class, 'dashboard']);
+    Route::post('/admin/system/backup-now', [AdminSystemController::class, 'backupNow']);
+    Route::get('/admin/system/backup-last/download', [AdminSystemController::class, 'downloadLastBackup']);
+    Route::delete('/admin/system/activity-logs', [AdminSystemController::class, 'clearActivityLogs']);
 });

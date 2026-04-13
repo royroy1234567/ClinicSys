@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import LogoutConfirmModal from '../components/common/LogoutConfirmModal';
 import {
   User, Lock, Bell, Monitor, Clock, LogOut,
@@ -12,14 +13,16 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
 
-/* ── Cookie-based apiFetch (walang Bearer token) ── */
+/* ── Authenticated apiFetch ── */
 const apiFetch = async (path, options = {}) => {
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    credentials: 'include',           // ← cookie auth
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       Accept:         'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
     },
   });
@@ -28,6 +31,16 @@ const apiFetch = async (path, options = {}) => {
     throw new Error(body.message ?? `HTTP ${res.status}`);
   }
   return res.json();
+};
+
+const normalizeMobileInput = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  let core = digits;
+  if (core.startsWith('63')) core = core.slice(2);
+  if (core.startsWith('0')) core = core.slice(1);
+  core = core.slice(0, 10);
+  return core ? `+63${core}` : '';
 };
 
 /* ══════════════════════════════════════════════════
@@ -120,7 +133,10 @@ function Field({ icon: Icon, label, value, editable, onChange, type = 'text', re
 function ProfileModal({ profile, onSave, onClose, saving }) {
   const [edit,  setEdit]  = useState(false);
   const [draft, setDraft] = useState(profile);
-  const f = k => v => setDraft(p => ({ ...p, [k]: v }));
+  const f = k => v => setDraft((p) => {
+    if (k === 'contact') return { ...p, [k]: normalizeMobileInput(v) };
+    return { ...p, [k]: v };
+  });
 
   return (
     <Modal onClose={onClose} icon={User} iconBg="bg-gradient-to-r from-blue-600 to-indigo-700"
@@ -318,10 +334,14 @@ function SettingItem({ icon: Icon, iconBg, label, desc, badge, onClick, danger }
 ══════════════════════════════════════════════════ */
 export default function StaffSettingsPage() {
   const { user, logout: authLogout } = useAuth();
+  const {
+    preferences,
+    setNotificationPreference,
+    validateNotificationPreference,
+  } = useNotifications();
 
   const [profile,  setProfile]  = useState(null);
   const [session,  setSession]  = useState({ lastLogin: '—', device: '—', ip: '—' });
-  const [notif,    setNotif]    = useState({ appointments: true, queue: true, system: false });
   const [modal,    setModal]    = useState(null);
   const [toast,    setToast]    = useState(null);
   const [saving,   setSaving]   = useState(false);
@@ -332,17 +352,18 @@ export default function StaffSettingsPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const data = await apiFetch('/auth/me'); // or /user — depende sa route mo
+        const data = await apiFetch('/auth/me');
+        const me = data?.user ?? data;
         setProfile({
-          fullName: data.name ?? `${data.first_name ?? ''} ${data.last_name ?? ''}`.trim(),
-          email:    data.email,
-          contact:  data.contact_number ?? '—',
-          role:     data.role ?? '—',
-          userId:   data.user_id ?? data.id,
+          fullName: me.name ?? `${me.first_name ?? ''} ${me.last_name ?? ''}`.trim(),
+          email:    me.email,
+          contact:  me.contact_number ?? '—',
+          role:     me.role ?? '—',
+          userId:   me.user_id ?? me.id,
         });
         // Session info kung available sa response
-        if (data.last_login_at) {
-          setSession(prev => ({ ...prev, lastLogin: new Date(data.last_login_at).toLocaleString('en-PH') }));
+        if (me.last_login_at) {
+          setSession(prev => ({ ...prev, lastLogin: new Date(me.last_login_at).toLocaleString('en-PH') }));
         }
       } catch {
         // Fallback — gamitin ang data mula sa AuthContext
@@ -365,11 +386,20 @@ export default function StaffSettingsPage() {
   const showToast = (msg, type = 'success') => setToast({ message: msg, type });
   const close     = () => setModal(null);
   const initials  = name => name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() ?? '??';
+  const notif = {
+    appointments: true,
+    queue: true,
+    system: false,
+    ...(preferences || {}),
+  };
 
   /* ── Save profile ── */
   const handleSaveProfile = async (draft, onDone) => {
     setSaving(true);
     try {
+      if (draft.contact && !/^\+63\d{10}$/.test(draft.contact)) {
+        throw new Error('Contact number must be +63 followed by 10 digits.');
+      }
       await apiFetch(`/users/${profile.userId}`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -460,7 +490,19 @@ export default function StaffSettingsPage() {
       {modal === 'notif' && (
         <NotifModal
           notif={notif}
-          onChange={(k, v) => { setNotif(p => ({ ...p, [k]: v })); showToast(`${k.charAt(0).toUpperCase()+k.slice(1)} notifications ${v ? 'enabled' : 'disabled'}.`); }}
+          onChange={(k, v) => {
+            const check = validateNotificationPreference(k, v);
+            if (!check?.ok) {
+              showToast(check?.reason || 'Invalid notification setting.', 'error');
+              return;
+            }
+            const result = setNotificationPreference(k, v);
+            if (!result?.ok) {
+              showToast(result?.reason || 'Unable to save notification setting.', 'error');
+              return;
+            }
+            showToast(`${k.charAt(0) + k.slice(1)} notifications ${v ? 'enabled' : 'disabled'}.`);
+          }}
           onClose={close}
         />
       )}

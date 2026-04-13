@@ -483,17 +483,7 @@ function ManageModal({ service, onClose, onSaved, onToggled, onArchived }) {
                 </div>
                 {errors.price && <p className="text-xs text-red-500">⚠ {errors.price}</p>}
               </FieldRow>
-              <FieldRow label="Billing Unit">
-                <SelectBox value={form.unit} onChange={v => set('unit', v)}
-                  options={[
-                    { value: 'per visit',     label: 'Per Visit'     },
-                    { value: 'per session',   label: 'Per Session'   },
-                    { value: 'per test',      label: 'Per Test'      },
-                    { value: 'per procedure', label: 'Per Procedure' },
-                    { value: 'per document',  label: 'Per Document'  },
-                    { value: 'per claim',     label: 'Per Claim'     },
-                  ]} />
-              </FieldRow>
+        
             </div>
 
             {form.category !== 'fee' && (
@@ -700,17 +690,7 @@ function AddServiceModal({ onClose, onSave, saving }) {
               </div>
               {errors.price && <p className="text-xs text-red-500">⚠ {errors.price}</p>}
             </FieldRow>
-            <FieldRow label="Billing Unit">
-              <SelectBox value={form.unit} onChange={v => set('unit', v)}
-                options={[
-                  { value: 'per visit',     label: 'Per Visit'     },
-                  { value: 'per session',   label: 'Per Session'   },
-                  { value: 'per test',      label: 'Per Test'      },
-                  { value: 'per procedure', label: 'Per Procedure' },
-                  { value: 'per document',  label: 'Per Document'  },
-                  { value: 'per claim',     label: 'Per Claim'     },
-                ]} />
-            </FieldRow>
+   
           </div>
 
           {form.category !== 'fee' && (
@@ -719,14 +699,6 @@ function AddServiceModal({ onClose, onSave, saving }) {
 </FieldRow>
           )}
 
-          <FieldRow label="Status">
-            <div className="flex items-center gap-3">
-              <Switch checked={form.status === 'active'} onCheckedChange={v => set('status', v ? 'active' : 'inactive')} />
-              <span className={`text-sm font-semibold ${form.status === 'active' ? 'text-green-600' : 'text-gray-400'}`}>
-                {form.status === 'active' ? 'Active — visible to staff' : 'Inactive — hidden from use'}
-              </span>
-            </div>
-          </FieldRow>
         </div>
 
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">

@@ -67,20 +67,9 @@ function UserDropdown({ user, roleGradient, roleLabels, onLogoutClick }) {
     patient: '/patient-settings',
   }[user?.role] || '/settings';
 
-  const profilePath = {
-    manager: '/profile',
-    staff:   '/profile',
-    doctor:  '/profile',
-    patient: '/profile',
-  }[user?.role] || '/profile';
+
 
   const menuItems = [
-    {
-      icon: UserCircle,
-      label: 'Profile',
-      sub: 'View & edit your profile',
-      onClick: () => { navigate(profilePath); setOpen(false); },
-    },
     {
       icon: Settings,
       label: 'Settings',

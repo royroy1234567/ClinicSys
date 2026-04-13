@@ -9,8 +9,10 @@ use App\Models\queue_entries;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Carbon;
+use App\Mail\ConsultationCompletedPatientMail;
 
 class TransactionController extends Controller
 {
@@ -233,6 +235,20 @@ class TransactionController extends Controller
         });
 
         $transaction->load(['patient', 'staff', 'items', 'queueEntry']);
+
+        try {
+            if ($transaction->queue_entry_id) {
+                $consultation = Consultation::with(['patient', 'doctor'])
+                    ->where('queue_entry_id', $transaction->queue_entry_id)
+                    ->first();
+                if ($consultation && !empty($consultation->patient?->email)) {
+                    Mail::to($consultation->patient->email)
+                        ->send(new ConsultationCompletedPatientMail($consultation, $transaction));
+                }
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return response()->json($this->formatTransaction($transaction), 201);
     }

@@ -5,8 +5,10 @@ import { NotificationProvider } from './context/NotificationContext';
 import { Toaster, toast } from 'sonner';
 
 import LoginPage from './LoginPage';
+import ForgotPasswordPage from './ForgotPasswordPage';
 import RegisterPage from './RegisterPage';
 import ClinicSysLanding from './Landing';
+import MaintenancePage from './MaintenancePage';
 import GoogleCallback from './components/layouts/Googlecallback';
 
 import AdminDashboard from './manager/ManagerDashboard';
@@ -16,6 +18,8 @@ import AppointmentsPage from './manager/ManagerAppointmentsPage';
 import AdminSettings from './admin/AdminSettings';
 import ServiceManagement from './manager/ManagerServiceManagement';
 import AdminAccManagament from './manager/ManagerUserManagement';
+import ManagerSettings from './manager/ManagerSettings';
+import ManagerFeedPage from './manager/ManagerFeedPage';
 
 import StaffDashboard from './staff/StaffDashboard';
 import StaffAppointments from './staff/StaffAppointments';
@@ -23,6 +27,7 @@ import QueuePage from './staff/StaffQueue';
 import StaffDoctor from './staff/StaffDoctor';
 import StaffSettings from './staff/StaffSettings';
 import StaffPOS from './staff/StaffPOS';
+import StaffPatient from './staff/StaffPatient';
 
 import DoctorDashboard from './doctor/DoctorDashboard';
 import SchedulePage from './doctor/DoctorSchedule';
@@ -114,6 +119,26 @@ function App() {
   const lastErrorRef = useRef({ message: '', at: 0 });
 
   useEffect(() => {
+    const isAdminUser = () => {
+      try {
+        const raw = localStorage.getItem('clinic_user');
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        return String(parsed?.role || '').toLowerCase() === 'admin';
+      } catch {
+        return false;
+      }
+    };
+
+    const redirectToMaintenanceIfNeeded = (status) => {
+      if (status !== 503) return false;
+      if (isAdminUser()) return false;
+      const path = window.location.pathname;
+      if (path === '/maintenance') return true;
+      window.location.replace('/maintenance');
+      return true;
+    };
+
     const showErrorToast = (rawMessage) => {
       const message = String(rawMessage || 'Something went wrong. Please try again.').trim();
       const now = Date.now();
@@ -138,6 +163,9 @@ function App() {
       try {
         const res = await originalFetch(...args);
         if (!res.ok) {
+          if (redirectToMaintenanceIfNeeded(res.status)) {
+            return res;
+          }
           const message = await readErrorMessage(res);
           showErrorToast(message);
         }
@@ -173,11 +201,13 @@ function App() {
 
           {/* ── FULLY PUBLIC ── */}
           <Route path="/" element={<ClinicSysLanding />} />
+          <Route path="/maintenance" element={<MaintenancePage />} />
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
 
           {/* ── GUEST-ONLY (redirect to /dashboard if already logged in) ── */}
           <Route element={<GuestRoute />}>
             <Route path="/login"    element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/register" element={<RegisterPage />} />
           </Route>
 
@@ -192,7 +222,9 @@ function App() {
             <Route path="/patients"        element={<PatientsPage />} />
             <Route path="/appointments"    element={<AppointmentsPage />} />
             <Route path="/services"        element={<ServiceManagement />} />
+            <Route path="/feed"            element={<ManagerFeedPage />} />
             <Route path="/user-management" element={<AdminAccManagament />} />
+            <Route path="/manager-settings" element={<ManagerSettings />} />
           </Route>
 
           {/* ── DOCTOR ONLY ── */}
@@ -216,6 +248,7 @@ function App() {
             <Route path="/staff-appointments" element={<StaffAppointments />} />
             <Route path="/queue"              element={<QueuePage />} />
             <Route path="/staff-doctors"      element={<StaffDoctor />} />
+            <Route path="/staff-patients"     element={<StaffPatient />} />
             <Route path="/staff-settings"     element={<StaffSettings />} />
             <Route path="/pos"                element={<StaffPOS />} />
           </Route>

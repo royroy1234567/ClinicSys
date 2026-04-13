@@ -22,6 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\HandleCors::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
+
+        $middleware->api(append: [
+            \App\Http\Middleware\MaintenanceModeGuard::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // ← Idagdag ito

@@ -165,6 +165,21 @@ const pctDelta = (arr, key) => {
 
 const sumField = (arr, key) => arr?.reduce((s, r) => s + Number(r?.[key] || 0), 0) || 0;
 
+const exportCsv = (rows, fileName) => {
+  const csv = rows
+    .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 function OverviewSection({ data, rangeLabel }) {
   const trend = data?.overview?.trend || [];
   const status = data?.status?.trend || [];
@@ -304,7 +319,12 @@ function DailyPanel({ data }) {
 
 function StatusPanel({ data }) {
   const trend = data?.status?.trend || [];
+  const cancelReasons = data?.status?.cancel_reason_breakdown || [];
+  const rescheduleReasons = data?.status?.reschedule_reason_breakdown || [];
+  const cancelReasonTotal = Number(data?.status?.cancel_reason_total || 0);
+  const rescheduleReasonTotal = Number(data?.status?.reschedule_reason_total || 0);
   const total = sumField(trend, "completed") + sumField(trend, "cancelled") + sumField(trend, "no_show");
+  const reasonColors = [BLUE, RED, ORANGE, PURPLE, TEAL, GRAY, GREEN, YELLOW];
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -334,6 +354,48 @@ function StatusPanel({ data }) {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Cancellation Reasons</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-2">Total captured: {cancelReasonTotal}</p>
+            {cancelReasons.length === 0 ? (
+              <p className="text-sm text-gray-500">No cancellation reason data yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={cancelReasons} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} labelLine={false} label={<PieLabel />}>
+                    {cancelReasons.map((entry, idx) => <Cell key={entry.name} fill={reasonColors[idx % reasonColors.length]} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Reschedule Reasons</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xs text-gray-500 mb-2">Total captured: {rescheduleReasonTotal}</p>
+            {rescheduleReasons.length === 0 ? (
+              <p className="text-sm text-gray-500">No reschedule reason data yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={rescheduleReasons} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} labelLine={false} label={<PieLabel />}>
+                    {rescheduleReasons.map((entry, idx) => <Cell key={entry.name} fill={reasonColors[idx % reasonColors.length]} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -704,6 +766,29 @@ export default function AdminDashboardReport() {
     }
   };
 
+  const handleExportPdf = () => {
+    const payload = JSON.stringify(data ?? {}, null, 2);
+    const content = `Manager Dashboard Report (${activeView})\nGenerated: ${new Date().toLocaleString('en-PH')}\nRange: ${range}\n\n${payload}`;
+    const blob = new Blob([content], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `manager-dashboard-${activeView}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    const trend = data?.overview?.trend || [];
+    const rows = [
+      ['Label', 'Actual', 'Forecast'],
+      ...trend.map((r) => [r.label, r.actual ?? 0, r.forecast ?? 0]),
+    ];
+    exportCsv(rows, `manager-dashboard-${activeView}-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
   return (
     <MainLayout
       title={isOverview ? "Dashboard" : "Dashboard & Reports"}
@@ -747,8 +832,8 @@ export default function AdminDashboardReport() {
               {isReport && (
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="w-3.5 h-3.5 mr-1.5" /> Print</Button>
-                  <Button size="sm" variant="outline"><Download className="w-3.5 h-3.5 mr-1.5" /> PDF</Button>
-                  <Button size="sm" variant="outline"><FileText className="w-3.5 h-3.5 mr-1.5" /> Excel</Button>
+                  <Button size="sm" variant="outline" onClick={handleExportPdf}><Download className="w-3.5 h-3.5 mr-1.5" /> PDF</Button>
+                  <Button size="sm" variant="outline" onClick={handleExportExcel}><FileText className="w-3.5 h-3.5 mr-1.5" /> Excel</Button>
                 </div>
               )}
             </div>

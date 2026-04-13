@@ -55,31 +55,31 @@ const timeAgo   = (dateStr) => {
 
 /* ══════════════ STAT CARD ══════════════ */
 const StatCard = ({ label, value, sub, icon: Icon, iconBg, iconColor, trend, trendValue, loading, accent }) => (
-  <Card className="relative overflow-hidden group hover:shadow-md transition-shadow duration-200">
+  <Card className="relative overflow-hidden group hover:shadow-md transition-shadow duration-200 py-0 gap-0 rounded-2xl border-gray-200 bg-white shadow-sm">
     <div
       className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
       style={{ background: `radial-gradient(circle at top right, ${accent}0a 0%, transparent 65%)` }}
     />
-    <CardContent className="p-5">
-      <div className="flex items-start justify-between mb-3">
-        <div className={`p-2.5 rounded-xl ${iconBg}`}>
-          <Icon className={`w-5 h-5 ${iconColor}`} />
+    <CardContent className="p-4">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconBg}`}>
+          <Icon className={`w-4 h-4 ${iconColor}`} />
         </div>
         {trend && !loading && (
-          <div className={`flex items-center gap-0.5 text-xs font-bold px-2 py-0.5 rounded-full
+          <div className={`inline-flex items-center gap-0.5 text-xs font-bold px-2 py-0.5 rounded-full
             ${trend === 'up' ? 'bg-green-50 text-green-600' : trend === 'down' ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-400'}`}>
             {trend === 'up'   ? <ArrowUpRight   className="w-3 h-3" /> : null}
-            {trend === 'down' ? <ArrowDownRight  className="w-3 h-3" /> : null}
+            {trend === 'down' ? <ArrowDownRight className="w-3 h-3" /> : null}
             {trendValue}
           </div>
         )}
       </div>
       {loading
-        ? <div className="space-y-2"><div className="h-7 w-16 bg-gray-100 rounded animate-pulse" /><div className="h-3 w-24 bg-gray-100 rounded animate-pulse" /></div>
+        ? <div className="space-y-2"><div className="h-8 w-14 bg-gray-100 rounded animate-pulse" /><div className="h-4 w-28 bg-gray-100 rounded animate-pulse" /></div>
         : <>
-            <p className="text-2xl font-black text-gray-900 tracking-tight">{value}</p>
-            <p className="text-xs text-gray-400 font-medium mt-0.5">{label}</p>
-            {sub && <p className="text-xs text-gray-300 mt-0.5">{sub}</p>}
+            <p className="text-4xl font-extrabold text-gray-900 tracking-tight leading-none">{value}</p>
+            <p className="text-sm font-semibold text-gray-500 mt-2">{label}</p>
+            {sub && <p className="text-sm text-gray-400 mt-1">{sub}</p>}
           </>
       }
     </CardContent>
@@ -499,7 +499,6 @@ export default function AccountAdminDashboard({ onNavigateToUsers, onAddUser }) 
   const active   = users.filter(u => u.status?.toLowerCase() === 'active').length;
   const inactive = users.filter(u => u.status?.toLowerCase() === 'inactive').length;
   const managers = users.filter(u => u.role?.toLowerCase() === 'manager').length;
-  const admins   = users.filter(u => u.role?.toLowerCase() === 'admin').length;
   const doctors  = users.filter(u => u.role?.toLowerCase() === 'doctor').length;
   const staff    = users.filter(u => u.role?.toLowerCase() === 'staff').length;
 
@@ -530,15 +529,14 @@ export default function AccountAdminDashboard({ onNavigateToUsers, onAddUser }) 
           </div>
         </div>
 
-        {/* ── KPI Row: 2+2 split — Status left, Roles right ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {/* ── KPI Row ── */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <StatCard label="Total Users" value={total}    icon={Users}       iconBg="bg-blue-50"   iconColor="text-blue-600"   accent="#2563eb" loading={loading} />
           <StatCard label="Active"      value={active}   icon={UserCheck}   iconBg="bg-green-50"  iconColor="text-green-600"  accent="#16a34a" loading={loading}
             trend={active > 0 ? 'up' : null} trendValue={`${total ? Math.round((active / total) * 100) : 0}%`} />
           <StatCard label="Inactive"    value={inactive} icon={UserX}       iconBg="bg-gray-50"   iconColor="text-gray-500"   accent="#6b7280" loading={loading}
             trend={inactive > 0 ? 'down' : null} trendValue={`${total ? Math.round((inactive / total) * 100) : 0}%`} />
           <StatCard label="Managers"   value={managers} icon={Briefcase}   iconBg="bg-orange-50" iconColor="text-orange-600" accent="#f97316" loading={loading} />
-          <StatCard label="Admins"     value={admins}   icon={Shield}      iconBg="bg-purple-50" iconColor="text-purple-600" accent="#9333ea" loading={loading} />
           <StatCard label="Doctors"    value={doctors}  icon={Stethoscope} iconBg="bg-blue-50"   iconColor="text-blue-600"   accent="#2563eb" loading={loading} />
           <StatCard label="Staff"      value={staff}    icon={Users}       iconBg="bg-teal-50"   iconColor="text-teal-600"   accent="#0d9488" loading={loading} />
         </div>

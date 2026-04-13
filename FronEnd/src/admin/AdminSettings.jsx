@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
+import { useNotifications } from '../context/NotificationContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
@@ -97,6 +98,11 @@ const DEFAULT_CLINIC = {
 /* ══════════ MAIN ══════════ */
 export default function SettingsPage() {
   const { toast } = useToast();
+  const {
+    preferences,
+    setNotificationPreference,
+    validateNotificationPreference,
+  } = useNotifications();
   const [activeTab,     setActiveTab]     = useState('clinic');
   const [saved,         setSaved]         = useState(false);
   const [saving,        setSaving]        = useState(false);
@@ -107,15 +113,20 @@ export default function SettingsPage() {
   const [clinic, setClinic] = useState(DEFAULT_CLINIC);
 
   /* — Notifications — */
-  const [notifs, setNotifs] = useState({
+  const notifs = {
     emailAppointments: true, emailFollowups: true, emailReports: false,
     smsAppointments: true, smsFollowups: false,
     inAppAll: true, inAppAppointments: true, inAppQueue: true, inAppSystem: true,
     reminderHours: '24', dailySummary: true, weeklySummary: false,
-  });
+    ...(preferences || {}),
+  };
 
   /* — Security — */
   const [security, setSecurity] = useState({
+    twoFactor: false, sessionTimeout: '30', passwordExpiry: '90',
+    loginAttempts: '5', auditLog: true, ipRestriction: false, forceHttps: true,
+  });
+  const [defaultSecurity, setDefaultSecurity] = useState({
     twoFactor: false, sessionTimeout: '30', passwordExpiry: '90',
     loginAttempts: '5', auditLog: true, ipRestriction: false, forceHttps: true,
   });
@@ -129,6 +140,13 @@ export default function SettingsPage() {
     autoBackup: true, backupFrequency: 'daily', backupRetention: '30',
     maintenanceMode: false, debugMode: false, cacheEnabled: true, maxUploadSize: '10',
   });
+  const [defaultSystem, setDefaultSystem] = useState({
+    autoBackup: true, backupFrequency: 'daily', backupRetention: '30',
+    maintenanceMode: false, debugMode: false, cacheEnabled: true, maxUploadSize: '10',
+  });
+  const [backupActionLoading, setBackupActionLoading] = useState(false);
+  const [downloadActionLoading, setDownloadActionLoading] = useState(false);
+  const [clearLogsLoading, setClearLogsLoading] = useState(false);
 
   /* ── Load clinic settings on mount ── */
   useEffect(() => {
@@ -138,6 +156,32 @@ export default function SettingsPage() {
         const data = await apiFetch('/clinic-settings');
         if (data && Object.keys(data).length > 0) {
           setClinic(prev => ({ ...prev, ...data }));
+          const toBool = (v, fallback = false) => {
+            if (v === undefined || v === null || v === '') return fallback;
+            return ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase());
+          };
+          const loadedSecurity = {
+            twoFactor: toBool(data.security_two_factor, false),
+            sessionTimeout: String(data.security_session_timeout ?? '30'),
+            passwordExpiry: String(data.security_password_expiry ?? '90'),
+            loginAttempts: String(data.security_login_attempts ?? '5'),
+            auditLog: toBool(data.security_audit_log, true),
+            ipRestriction: toBool(data.security_ip_restriction, false),
+            forceHttps: toBool(data.security_force_https, true),
+          };
+          const loadedSystem = {
+            autoBackup: toBool(data.system_auto_backup, true),
+            backupFrequency: String(data.system_backup_frequency ?? 'daily'),
+            backupRetention: String(data.system_backup_retention ?? '30'),
+            maintenanceMode: toBool(data.system_maintenance_mode, false),
+            debugMode: false,
+            cacheEnabled: true,
+            maxUploadSize: String(data.system_max_upload_size ?? '10'),
+          };
+          setSecurity(loadedSecurity);
+          setDefaultSecurity(loadedSecurity);
+          setSystem(loadedSystem);
+          setDefaultSystem(loadedSystem);
         }
       } catch {
         // fallback to defaults — silently ignore
@@ -149,7 +193,17 @@ export default function SettingsPage() {
   }, []);
 
   const setC   = (k, v) => setClinic(p   => ({ ...p, [k]: v }));
-  const setN   = (k, v) => setNotifs(p   => ({ ...p, [k]: v }));
+  const setN   = (k, v) => {
+    const check = validateNotificationPreference(k, v);
+    if (!check?.ok) {
+      toast({ title: 'Invalid setting', description: check?.reason || 'Notification setting is invalid.', variant: 'destructive' });
+      return;
+    }
+    const result = setNotificationPreference(k, v);
+    if (!result?.ok) {
+      toast({ title: 'Save failed', description: result?.reason || 'Unable to save notification setting.', variant: 'destructive' });
+    }
+  };
   const setS   = (k, v) => setSecurity(p => ({ ...p, [k]: v }));
   const setSys = (k, v) => setSystem(p   => ({ ...p, [k]: v }));
 
@@ -162,6 +216,33 @@ export default function SettingsPage() {
           method: 'POST',
           body: JSON.stringify(clinic),
         });
+      } else if (activeTab === 'security') {
+        await apiFetch('/clinic-settings', {
+          method: 'POST',
+          body: JSON.stringify({
+            security_two_factor: security.twoFactor,
+            security_two_factor_channel: 'email',
+            security_session_timeout: security.sessionTimeout,
+            security_password_expiry: security.passwordExpiry,
+            security_login_attempts: security.loginAttempts,
+            security_audit_log: security.auditLog,
+            security_ip_restriction: security.ipRestriction,
+            security_force_https: security.forceHttps,
+          }),
+        });
+        setDefaultSecurity(security);
+      } else if (activeTab === 'system') {
+        await apiFetch('/clinic-settings', {
+          method: 'POST',
+          body: JSON.stringify({
+            system_auto_backup: system.autoBackup,
+            system_backup_frequency: system.backupFrequency,
+            system_backup_retention: system.backupRetention,
+            system_max_upload_size: system.maxUploadSize,
+            system_maintenance_mode: system.maintenanceMode,
+          }),
+        });
+        setDefaultSystem(system);
       }
       setSaved(true);
       toast({ title: 'Settings saved', description: 'Your changes have been applied successfully.' });
@@ -388,14 +469,6 @@ export default function SettingsPage() {
                     checked={notifs.emailReports} onChange={v => setN('emailReports', v)} />
                 </div>
 
-                <SectionHeader title="SMS Notifications" description="Requires SMS gateway integration" />
-                <div className="divide-y divide-gray-50">
-                  <ToggleRow label="Appointment SMS Reminders" description="Text patients before their appointment"
-                    checked={notifs.smsAppointments} onChange={v => setN('smsAppointments', v)} />
-                  <ToggleRow label="Follow-up SMS Alerts" description="Text patients when follow-up is scheduled"
-                    checked={notifs.smsFollowups} onChange={v => setN('smsFollowups', v)} />
-                </div>
-
                 <SectionHeader title="In-App Notifications" />
                 <div className="divide-y divide-gray-50">
                   <ToggleRow label="All Notifications" description="Master toggle for in-app alerts"
@@ -442,12 +515,8 @@ export default function SettingsPage() {
                 <CardContent className="space-y-4">
                   <SectionHeader title="Access Control" />
                   <div className="divide-y divide-gray-50">
-                    <ToggleRow label="Two-Factor Authentication" description="Require OTP on login for all users"
+                    <ToggleRow label="Two-Factor Authentication (Email OTP)" description="Require email OTP on login for all users"
                       checked={security.twoFactor} onChange={v => setS('twoFactor', v)} />
-                    <ToggleRow label="Enforce HTTPS" description="Redirect all HTTP traffic to HTTPS"
-                      checked={security.forceHttps} onChange={v => setS('forceHttps', v)} />
-                    <ToggleRow label="IP Restriction" description="Limit access to whitelisted IP addresses"
-                      checked={security.ipRestriction} onChange={v => setS('ipRestriction', v)} />
                     <ToggleRow label="Audit Logging" description="Track all user actions in Activity Logs"
                       checked={security.auditLog} onChange={v => setS('auditLog', v)} />
                   </div>
@@ -570,19 +639,59 @@ export default function SettingsPage() {
 
                   <div className="flex flex-wrap gap-3 pt-1">
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs"
-                      onClick={() => toast({ title: 'Backup started', description: 'Manual backup is running…' })}>
+                      onClick={async () => {
+                        try {
+                          setBackupActionLoading(true);
+                          const result = await apiFetch('/admin/system/backup-now', { method: 'POST' });
+                          toast({ title: 'Backup complete', description: result.message ?? 'Backup created.' });
+                        } catch (err) {
+                          toast({ title: 'Backup failed', description: err.message, variant: 'destructive' });
+                        } finally {
+                          setBackupActionLoading(false);
+                        }
+                      }} disabled={backupActionLoading}>
                       <HardDrive className="w-3.5 h-3.5" /> Backup Now
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs"
-                      onClick={() => toast({ title: 'Download ready', description: 'Preparing backup file…' })}>
+                      onClick={async () => {
+                        try {
+                          setDownloadActionLoading(true);
+                          const token = localStorage.getItem('auth_token');
+                          const res = await fetch(`${API_BASE}/admin/system/backup-last/download`, {
+                            method: 'GET',
+                            headers: {
+                              Accept: 'application/json',
+                              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                            },
+                            credentials: 'include',
+                          });
+                          if (!res.ok) {
+                            const body = await res.json().catch(() => ({}));
+                            throw new Error(body.message ?? `HTTP ${res.status}`);
+                          }
+                          const blob = await res.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'clinicsys-backup.json';
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                          window.URL.revokeObjectURL(url);
+                          toast({ title: 'Download started', description: 'Backup file download started.' });
+                        } catch (err) {
+                          toast({ title: 'Download failed', description: err.message, variant: 'destructive' });
+                        } finally {
+                          setDownloadActionLoading(false);
+                        }
+                      }} disabled={downloadActionLoading}>
                       <Download className="w-3.5 h-3.5" /> Download Last Backup
                     </Button>
                   </div>
 
                   <SectionHeader title="Maintenance" />
                   <div className="divide-y divide-gray-50">
-                    <ToggleRow label="Cache Enabled" description="Store frequently accessed data in memory for speed"
-                      checked={system.cacheEnabled} onChange={v => setSys('cacheEnabled', v)} />
+       
                     <ToggleRow label="Maintenance Mode" description="Temporarily disable access for all non-admin users"
                       checked={system.maintenanceMode} onChange={v => setSys('maintenanceMode', v)} />
                   </div>
@@ -608,12 +717,19 @@ export default function SettingsPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-3">
+              
                       <Button size="sm" variant="outline" className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
-                        onClick={() => toast({ title: 'Cache cleared', description: 'System cache has been flushed.' })}>
-                        <RefreshCw className="w-3.5 h-3.5" /> Clear Cache
-                      </Button>
-                      <Button size="sm" variant="outline" className="text-xs border-red-200 text-red-500 hover:bg-red-50 gap-1.5"
-                        onClick={() => toast({ title: 'Logs cleared', description: 'Activity logs have been wiped.' })}>
+                        onClick={async () => {
+                          try {
+                            setClearLogsLoading(true);
+                            const result = await apiFetch('/admin/system/activity-logs', { method: 'DELETE' });
+                            toast({ title: 'Logs cleared', description: result.message ?? 'Activity logs cleared.' });
+                          } catch (err) {
+                            toast({ title: 'Clear failed', description: err.message, variant: 'destructive' });
+                          } finally {
+                            setClearLogsLoading(false);
+                          }
+                        }} disabled={clearLogsLoading}>
                         <Trash2 className="w-3.5 h-3.5" /> Clear All Logs
                       </Button>
                     </div>
@@ -628,6 +744,8 @@ export default function SettingsPage() {
             <Button variant="outline" className="w-full sm:w-auto" onClick={() => {
               toast({ title: 'Changes discarded' });
               if (activeTab === 'clinic') setClinic(DEFAULT_CLINIC);
+              if (activeTab === 'security') setSecurity(defaultSecurity);
+              if (activeTab === 'system') setSystem(defaultSystem);
             }}>
               <RefreshCw className="w-4 h-4 mr-1.5" /> Discard
             </Button>

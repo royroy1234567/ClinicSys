@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import LogoutConfirmModal from '../components/common/LogoutConfirmModal';
+import { useNotifications } from '../context/NotificationContext';
 import {
   User, Lock, Bell, Shield, LogOut, Info,
   Check, X, Eye, EyeOff, Phone, Mail,
@@ -65,6 +66,16 @@ const updatePassword = (userId, data) =>
 // POST /api/auth/logout
 const logoutApi = () =>
   apiFetch('/auth/logout', { method: 'POST' });
+
+const normalizeMobileInput = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  let core = digits;
+  if (core.startsWith('63')) core = core.slice(2);
+  if (core.startsWith('0')) core = core.slice(1);
+  core = core.slice(0, 10);
+  return core ? `+63${core}` : '';
+};
 
 /* ══════════════════════════════════════════════════
    TOAST
@@ -178,7 +189,10 @@ function ProfileModal({ user, onSave, onClose }) {
     license_number:  user?.license_number  || '',
   });
 
-  const f = k => v => setDraft(p => ({ ...p, [k]: v }));
+  const f = k => v => setDraft((p) => {
+    if (k === 'contact_number') return { ...p, [k]: normalizeMobileInput(v) };
+    return { ...p, [k]: v };
+  });
 
   const handleSave = async () => {
     setError('');
@@ -387,16 +401,26 @@ function SettingItem({ icon: Icon, iconBg, label, desc, badge, onClick, danger }
    MAIN PAGE
 ══════════════════════════════════════════════════ */
 export default function DoctorSettingsPage() {
+  const {
+    preferences,
+    setNotificationPreference,
+    validateNotificationPreference,
+  } = useNotifications();
   const [user,     setUser]     = useState(null);
   const [loading,  setLoading]  = useState(true);
-  const [notif,    setNotif]    = useState({
-    newAppointment: true, cancellation: true,
-    reminder: true, patientArrival: true, systemAnnounce: false,
-  });
   const [theme,    setTheme]    = useState('light');
   const [language, setLanguage] = useState('English');
   const [modal,    setModal]    = useState(null);
   const [toast,    setToast]    = useState(null);
+
+  const notif = {
+    newAppointment: true,
+    cancellation: true,
+    reminder: true,
+    patientArrival: true,
+    systemAnnounce: false,
+    ...(preferences || {}),
+  };
 
   const showToast = (msg, type = 'success') => setToast({ message: msg, type });
   const close     = () => setModal(null);
@@ -413,6 +437,9 @@ export default function DoctorSettingsPage() {
   // ── Profile update ────────────────────────────────
   const handleProfileSave = async (draft) => {
     if (!user?.user_id) throw new Error('User not loaded.');
+    if (draft.contact_number && !/^\+63\d{10}$/.test(draft.contact_number)) {
+      throw new Error('Contact number must be +63 followed by 10 digits.');
+    }
     const updated = await updateProfile(user.user_id, {
       first_name:     draft.first_name,
       last_name:      draft.last_name,
@@ -488,7 +515,7 @@ export default function DoctorSettingsPage() {
           {/* Quick stats */}
           <div className="relative flex items-center gap-5 mt-4 pt-4 border-t border-white/10">
             {[
-              { label: 'User ID',     value: user?.user_id        || '—' },
+              { label: 'User ID',     value: user?.public_id      || user?.user_id || '—' },
               { label: 'License No.', value: user?.license_number || '—' },
               { label: 'Email',       value: user?.email          || '—' },
             ].map((s, i) => (
@@ -561,7 +588,19 @@ export default function DoctorSettingsPage() {
       {modal === 'notif' && (
         <NotifModal
           notif={notif}
-          onChange={(k, v) => { setNotif(p => ({ ...p, [k]: v })); showToast(`Notification ${v ? 'enabled' : 'disabled'}.`); }}
+          onChange={(k, v) => {
+            const check = validateNotificationPreference(k, v);
+            if (!check?.ok) {
+              showToast(check?.reason || 'Invalid notification setting.', 'error');
+              return;
+            }
+            const result = setNotificationPreference(k, v);
+            if (!result?.ok) {
+              showToast(result?.reason || 'Unable to save notification setting.', 'error');
+              return;
+            }
+            showToast(`Notification ${v ? 'enabled' : 'disabled'}.`);
+          }}
           onClose={close}
         />
       )}

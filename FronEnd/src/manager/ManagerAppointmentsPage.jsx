@@ -7,7 +7,7 @@ import {
   Eye, Edit, Trash2, X, Check, ChevronDown, ChevronLeft, ChevronRight,
   AlertTriangle, CheckCircle2, XCircle, UserX, TrendingUp, Printer,
   Download, LayoutList, PlayCircle, CheckSquare, Users, FileText,
-  BellRing, ArrowUpDown, Plus,
+  BellRing, ArrowUpDown, Plus, Lock,
 } from 'lucide-react';
 import { api } from '../services/Api';
 import { useToast } from '../hooks/use-toast';
@@ -70,6 +70,21 @@ const fmtTime = (t) => {
 
 const fmtDate = (d) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+
+const exportCsv = (rows, fileName) => {
+  const csv = rows
+    .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
 
 const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
 
@@ -167,8 +182,8 @@ function ViewModal({ appointment, patients, doctors, onClose,  }) {
           </div>
           <div className="bg-gray-50 rounded-xl p-4 space-y-3">
             {[
-              { Icon: User,         label: 'Patient', value: patient?.name || `Patient #${appointment.patient_id}` },
-              { Icon: Stethoscope,  label: 'Doctor',  value: `${doctor?.name || `Doctor #${appointment.doctor_id}`}${doctor?.specialization ? ' — ' + doctor.specialization : ''}` },
+              { Icon: User,         label: 'Patient', value: patient?.name || 'Patient' },
+              { Icon: Stethoscope,  label: 'Doctor',  value: `${doctor?.name || 'Doctor'}${doctor?.specialization ? ' — ' + doctor.specialization : ''}` },
               { Icon: CalendarIcon, label: 'Date',    value: fmtDate(appointment.date) },
               { Icon: Clock,        label: 'Time',    value: `${fmtTime(appointment.start_time)} – ${fmtTime(appointment.end_time)}` },
               { Icon: FileText,     label: 'Type',    value: appointment.appointment_type || 'General Consultation' },
@@ -186,10 +201,10 @@ function ViewModal({ appointment, patients, doctors, onClose,  }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             {[
-              ['Created By',    appointment.created_by || '—'],
+              ['Appointment #', appointment.appointment_number || appointment.id || '—'],
+              ['Queue #',       appointment.queue_reference_number || (appointment.queue_number ? `#${appointment.queue_number}` : '—')],
               ['Date Created',  appointment.created_at || '—'],
               ['Last Modified', appointment.updated_at || '—'],
-              ['Consultation',  appointment.consultation_id ? `#${appointment.consultation_id}` : 'Not linked'],
             ].map(([k, v]) => (
               <div key={k} className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-400 font-bold uppercase tracking-wide">{k}</p>
@@ -266,8 +281,25 @@ const AppointmentsPage = () => {
         api.patients.getAll(),
         api.doctors.getAll(),
       ]);
-      setAppointments(apts || []);
-      setAllApts(apts || []);
+      const rows = (apts || []).map((a) => ({
+        id: a.appointment_number || a.appointment_id,
+        appointment_id: a.appointment_id,
+        appointment_number: a.appointment_number || null,
+        date: a.appointment_date,
+        start_time: (a.appointment_time || '').slice(0, 5),
+        end_time: null,
+        patient_id: a.patient_id,
+        doctor_id: a.doctor_id,
+        status: a.status,
+        queue_reference_number: a.queue_reference_number || null,
+        queue_number: a.queue_number ?? a.queue_entry_id ?? null,
+        reason: a.reason,
+        appointment_type: a.service_name || a.appointment_type || 'General',
+        patient_name: a.patient_name || null,
+        doctor_name: a.doctor_name || null,
+      }));
+      setAppointments(rows);
+      setAllApts(rows);
       setPatients(pts || []);
       setDoctors(drs || []);
     } catch {
@@ -292,8 +324,8 @@ const AppointmentsPage = () => {
     if (filterStatus && a.status !== filterStatus)            return false;
     if (filterSearch) {
       const q  = filterSearch.toLowerCase();
-      const pt = patients.find(p => String(p.id) === String(a.patient_id))?.name?.toLowerCase() || '';
-      const dr = doctors.find(d => String(d.id) === String(a.doctor_id))?.name?.toLowerCase() || '';
+      const pt = (a.patient_name || patients.find(p => String(p.id) === String(a.patient_id))?.name || '').toLowerCase();
+      const dr = (a.doctor_name || doctors.find(d => String(d.id) === String(a.doctor_id))?.name || '').toLowerCase();
       return pt.includes(q) || dr.includes(q) || String(a.id).toLowerCase().includes(q);
     }
     return true;
@@ -323,18 +355,51 @@ const AppointmentsPage = () => {
     return map;
   }, [doctors, queue]);
 
-  /* Status updater */
-  const handleStatusUpdate = async (id, status) => {
-    try {
-      await api.appointments.update(id, { status });
-      const upd = list => list.map(x => x.id === id ? { ...x, status } : x);
-      setAppointments(upd);
-      setAllApts(upd);
-      toast({ title: 'Status updated', description: `Marked as ${STATUS_CFG[status]?.label}.` });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' });
-    }
+  const handleExportPdf = () => {
+    const content = [
+      'Manager Appointments Report',
+      `Generated: ${new Date().toLocaleString('en-PH')}`,
+      `Total Records: ${filtered.length}`,
+      '',
+      ...filtered.map((apt) => {
+        const pt = patients.find(p => String(p.id) === String(apt.patient_id));
+        const dr = doctors.find(d => String(d.id) === String(apt.doctor_id));
+        return `${apt.id} | ${fmtDate(apt.date)} | ${fmtTime(apt.start_time)} | ${apt.patient_name || pt?.name || apt.patient_id} | ${apt.doctor_name || dr?.name || apt.doctor_id} | ${apt.status}`;
+      }),
+    ].join('\n');
+    const blob = new Blob([content], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `manager-appointments-${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
   };
+
+  const handleExportExcel = () => {
+    const rows = [
+      ['ID', 'Date', 'Start', 'End', 'Patient', 'Doctor', 'Type', 'Status', 'Queue'],
+      ...filtered.map((apt) => {
+        const pt = patients.find(p => String(p.id) === String(apt.patient_id));
+        const dr = doctors.find(d => String(d.id) === String(apt.doctor_id));
+        return [
+          apt.id,
+          apt.date,
+          apt.start_time,
+          apt.end_time || '',
+          apt.patient_name || pt?.name || apt.patient_id,
+          apt.doctor_name || dr?.name || apt.doctor_id,
+          apt.appointment_type || 'General',
+          apt.status,
+          apt.queue_number ?? '',
+        ];
+      }),
+    ];
+    exportCsv(rows, `manager-appointments-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
 
   /* Save (edit only) */
   const handleSave = async (form) => {
@@ -362,26 +427,6 @@ const AppointmentsPage = () => {
     } catch {
       toast({ title: 'Error', description: 'Failed to delete.', variant: 'destructive' });
     } finally { setSaving(false); }
-  };
-
-  /* Call next: picks first "scheduled" in FCFS queue → marks as "called" */
-  const handleCallNext = async () => {
-    const next = queue.find(a => a.status === 'scheduled');
-    if (!next) { toast({ title: 'No patients waiting', description: 'Queue is empty.' }); return; }
-    await handleStatusUpdate(next.id, 'called');
-  };
-
-  /* Re-sort: persist recalculated queue_number values back to API */
-  const handleResortQueue = async () => {
-    try {
-      await Promise.all(queue.map(apt =>
-        api.appointments.update(apt.id, { queue_number: apt.queue_number })
-      ));
-      loadData();
-      toast({ title: 'Queue re-sorted', description: 'Numbers updated by time slot / arrival order.' });
-    } catch {
-      toast({ title: 'Error', description: 'Failed to re-sort.', variant: 'destructive' });
-    }
   };
 
   return (
@@ -466,8 +511,8 @@ const AppointmentsPage = () => {
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => window.print()}><Printer className="w-3 h-3" /> Print</Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toast({ title: 'Exporting PDF...' })}><Download className="w-3 h-3" /> PDF</Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toast({ title: 'Exporting Excel...' })}><Download className="w-3 h-3" /> Excel</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleExportPdf}><Download className="w-3 h-3" /> PDF</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleExportExcel}><Download className="w-3 h-3" /> Excel</Button>
                 </div>
               </div>
             </CardHeader>
@@ -479,7 +524,7 @@ const AppointmentsPage = () => {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-y border-gray-100 bg-gray-50">
-                        {['ID', 'Date', 'Time', 'Patient', 'Doctor', 'Type', 'Status', 'Queue #', 'Actions'].map(h => (
+                        {['Appointment #', 'Date', 'Time', 'Patient', 'Doctor', 'Type', 'Status', 'Queue #', 'Actions'].map(h => (
                           <th key={h} className="text-left py-2.5 px-3 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -494,26 +539,28 @@ const AppointmentsPage = () => {
                       {paginated.map(apt => {
                         const pt = patients.find(p => String(p.id) === String(apt.patient_id));
                         const dr = doctors.find(d => String(d.id) === String(apt.doctor_id));
+                        const patientLabel = apt.patient_name || pt?.name || `Patient #${apt.patient_id}`;
+                        const doctorLabel = apt.doctor_name || dr?.name || `Doctor #${apt.doctor_id}`;
                         return (
                           <tr key={apt.id} className="hover:bg-gray-50 transition-colors" data-testid={`appointment-item-${apt.id}`}>
-                            <td className="py-2.5 px-3 font-mono text-xs font-bold text-gray-400 whitespace-nowrap">{apt.id}</td>
+                            <td className="py-2.5 px-3 font-mono text-xs font-bold text-gray-400 whitespace-nowrap">{apt.appointment_number || apt.id}</td>
                             <td className="py-2.5 px-3 text-xs text-gray-600 whitespace-nowrap">{fmtDate(apt.date)}</td>
                             <td className="py-2.5 px-3 whitespace-nowrap">
                               <p className="text-xs font-semibold text-gray-800">{fmtTime(apt.start_time)}</p>
                               <p className="text-xs text-gray-400">{fmtTime(apt.end_time)}</p>
                             </td>
                             <td className="py-2.5 px-3 whitespace-nowrap">
-                              <p className="text-sm font-semibold text-gray-900">{pt?.name || `Patient #${apt.patient_id}`}</p>
+                              <p className="text-sm font-semibold text-gray-900">{patientLabel}</p>
                             </td>
                             <td className="py-2.5 px-3 whitespace-nowrap">
-                              <p className="text-xs font-semibold text-gray-800">{dr?.name || `Doctor #${apt.doctor_id}`}</p>
+                              <p className="text-xs font-semibold text-gray-800">{doctorLabel}</p>
                               {dr?.specialization && <p className="text-xs text-gray-400">{dr.specialization}</p>}
                             </td>
                             <td className="py-2.5 px-3 text-xs text-gray-600 whitespace-nowrap">{apt.appointment_type || 'General'}</td>
                             <td className="py-2.5 px-3"><StatusBadge status={apt.status} /></td>
                             <td className="py-2.5 px-3 text-center">
                               <span className="inline-flex w-7 h-7 rounded-full text-xs font-black items-center justify-center bg-blue-50 text-blue-600">
-                                {apt.queue_number || '—'}
+                                {apt.queue_reference_number || apt.queue_number || '—'}
                               </span>
                             </td>
                             <td className="py-2.5 px-3">
@@ -548,17 +595,9 @@ const AppointmentsPage = () => {
                   Order: First Come, First Served — sorted by appointment time slot, then arrival order
                 </p>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleCallNext}>
-                  <BellRing className="w-3.5 h-3.5" /> Call Next
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handleResortQueue}>
-                  <ArrowUpDown className="w-3.5 h-3.5" /> Re-sort Queue
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs text-red-500 hover:border-red-300"
-                  onClick={() => toast({ title: 'Queue reset', description: 'Daily queue has been cleared.' })}>
-                  <RefreshCw className="w-3.5 h-3.5" /> Reset
-                </Button>
+              <div className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                <Lock className="w-3.5 h-3.5" />
+                View-only mode for managers
               </div>
             </div>
 
@@ -650,7 +689,7 @@ const AppointmentsPage = () => {
                             ${isOngoing ? 'bg-yellow-100 text-yellow-700' :
                               isCalled  ? 'bg-purple-100 text-purple-700' :
                               'bg-blue-50 text-blue-600'}`}>
-                            {apt.queue_number || idx + 1}
+                            {apt.queue_reference_number || apt.queue_number || idx + 1}
                           </div>
 
                           {/* Info */}
@@ -677,31 +716,11 @@ const AppointmentsPage = () => {
                             </p>
                           </div>
 
-                          {/* Action buttons */}
                           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-                            {apt.status === 'scheduled' && (
-                              <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white h-8 text-xs"
-                                onClick={() => handleStatusUpdate(apt.id, 'called')}>
-                                <BellRing className="w-3.5 h-3.5 mr-1" /> Call
-                              </Button>
-                            )}
-                            {apt.status === 'called' && (
-                              <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600 text-white h-8 text-xs"
-                                onClick={() => handleStatusUpdate(apt.id, 'ongoing')}>
-                                <PlayCircle className="w-3.5 h-3.5 mr-1" /> Start
-                              </Button>
-                            )}
-                            {apt.status === 'ongoing' && (
-                              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs"
-                                onClick={() => handleStatusUpdate(apt.id, 'completed')}>
-                                <CheckSquare className="w-3.5 h-3.5 mr-1" /> Done
-                              </Button>
-                            )}
-                            <button
-                              onClick={() => handleStatusUpdate(apt.id, 'no_show')}
-                              className="h-8 px-2.5 text-xs rounded-lg border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors font-semibold">
-                              No-show
-                            </button>
+                            <span className="inline-flex items-center gap-1 text-xs text-gray-400 font-semibold">
+                              <Lock className="w-3.5 h-3.5" />
+                              View only
+                            </span>
                           </div>
                         </div>
                       </CardContent>

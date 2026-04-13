@@ -9,8 +9,11 @@ use App\Models\queue_entries;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use App\Mail\AppointmentNoShowPatientMail;
+use App\Mail\AppointmentCompletedPatientMail;
 
 class QueueEntriesController extends Controller
 {
@@ -20,6 +23,7 @@ class QueueEntriesController extends Controller
     public function index(Request $request)
     {
         $date = $request->query('date', now()->toDateString());
+        $this->expireCalledEntries($date);
 
         $existingAppointmentIds = queue_entries::where('queue_date', $date)
             ->whereNotNull('appointment_id')
@@ -81,11 +85,15 @@ class QueueEntriesController extends Controller
         $request->validate([
             'patient_id' => 'nullable|integer|exists:patients,id',
             'name' => 'required_without:patient_id|string|max:150',
-            'age' => 'nullable|integer|min:0|max:120',
-            'contact' => 'nullable|string|max:30',
+            'age' => 'nullable|integer|min:18|max:100',
+            'contact' => ['nullable', 'string', 'regex:/^\+63\d{10}$/'],
             'service_id' => 'required|integer|exists:services,service_id',
             'doctor_id' => 'nullable|integer|exists:clinic_users,user_id',
             'priority' => 'required|in:senior,walkin',
+        ], [
+            'age.min' => 'Walk-in age must be at least 18.',
+            'age.max' => 'Walk-in age cannot be more than 100.',
+            'contact.regex' => 'Contact number must be in +63 format followed by 10 digits.',
         ]);
 
         $created = DB::transaction(function () use ($request) {
@@ -112,10 +120,37 @@ class QueueEntriesController extends Controller
             }
 
             $next = (int) queue_entries::where('queue_date', $date)->max('queue_number') + 1;
+            $doctorId = $request->doctor_id ? (int) $request->doctor_id : null;
+
+            if ($doctorId) {
+                $doctor = clinic_users::find($doctorId);
+                if (!$doctor || $doctor->role !== 'Doctor') {
+                    throw ValidationException::withMessages([
+                        'doctor_id' => ['Only doctors can be assigned.'],
+                    ]);
+                }
+
+                if (strtolower((string) ($doctor->availability_status ?? 'unavailable')) !== 'available') {
+                    throw ValidationException::withMessages([
+                        'doctor_id' => ['Selected doctor is currently unavailable.'],
+                    ]);
+                }
+
+                $doctorHasActivePatient = queue_entries::where('queue_date', $date)
+                    ->where('doctor_id', $doctorId)
+                    ->whereIn('status', ['called', 'ongoing'])
+                    ->exists();
+
+                if ($doctorHasActivePatient) {
+                    throw ValidationException::withMessages([
+                        'doctor_id' => ['Selected doctor already has an active patient.'],
+                    ]);
+                }
+            }
 
             return queue_entries::create([
                 'patient_id' => $patientId,
-                'doctor_id' => $request->doctor_id,
+                'doctor_id' => $doctorId,
                 'service_id' => $request->service_id,
                 'queue_date' => $date,
                 'queue_number' => $next,
@@ -180,13 +215,27 @@ class QueueEntriesController extends Controller
 
         $entry->update($updates);
 
-        if ($entry->appointment_id && in_array($status, ['ongoing', 'completed', 'no-show'], true)) {
+        if ($entry->appointment_id && in_array($status, ['completed', 'no-show'], true)) {
             $appointment = Appointment::find($entry->appointment_id);
             if ($appointment) {
                 $appointmentStatus = $status === 'no-show' ? 'no_show' : $status;
                 if ($appointment->status !== $appointmentStatus) {
                     $appointment->status = $appointmentStatus;
                     $appointment->save();
+                }
+
+                try {
+                    $appointment->load(['patient', 'doctor', 'service']);
+                    if (!empty($appointment->patient?->email)) {
+                        if ($status === 'completed') {
+                            Mail::to($appointment->patient->email)->send(new AppointmentCompletedPatientMail($appointment));
+                        }
+                        if ($status === 'no-show') {
+                            Mail::to($appointment->patient->email)->send(new AppointmentNoShowPatientMail($appointment));
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    report($e);
                 }
             }
         }
@@ -199,16 +248,6 @@ class QueueEntriesController extends Controller
                     $doctor->save();
                 }
 
-                if (in_array($status, ['completed', 'no-show'], true)) {
-                    $stillOngoing = queue_entries::where('doctor_id', $entry->doctor_id)
-                        ->where('queue_date', $entry->queue_date)
-                        ->where('status', 'ongoing')
-                        ->exists();
-                    if (!$stillOngoing) {
-                        $doctor->availability_status = 'available';
-                        $doctor->save();
-                    }
-                }
             }
         }
 
@@ -346,6 +385,7 @@ class QueueEntriesController extends Controller
         $service = $q->appointment?->service ?? $q->service;
         return [
             'queue_entry_id' => $q->queue_entry_id,
+            'queue_reference_number' => $q->queue_reference_number ?: $q->buildQueueReferenceNumber(),
             'queue_number' => $q->queue_number,
             'patient_id' => $q->patient_id,
             'patient_name' => trim(($q->patient->first_name ?? '') . ' ' . ($q->patient->last_name ?? '')),
@@ -358,12 +398,61 @@ class QueueEntriesController extends Controller
             'status' => str_replace('-', '_', $q->status),
             'source' => str_replace('-', '', $q->source),
             'arrival_time' => $q->arrival_time ? substr((string) $q->arrival_time, 0, 5) : null,
+            'called_at' => $q->called_at?->toISOString(),
+            'called_deadline_at' => ($q->status === 'called' && $q->called_at && !$q->started_at)
+                ? $q->called_at->copy()->addMinutes(5)->toISOString()
+                : null,
+            'started_at' => $q->started_at?->toISOString(),
             'appointment_id' => $q->appointment_id,
             'reason' => $q->appointment?->reason,
             'service_id' => $service?->service_id,
             'service_name' => $service?->service_name,
             'service_price' => $service ? (float) $service->price : null,
         ];
+    }
+
+    private function expireCalledEntries(string $date): void
+    {
+        $cutoff = now(self::PH_TIMEZONE)->subMinutes(5);
+        $expired = queue_entries::where('queue_date', $date)
+            ->where('status', 'called')
+            ->whereNull('started_at')
+            ->whereNotNull('called_at')
+            ->where('called_at', '<=', $cutoff)
+            ->get();
+
+        if ($expired->isEmpty()) {
+            return;
+        }
+
+        DB::transaction(function () use ($expired) {
+            $now = now(self::PH_TIMEZONE);
+            foreach ($expired as $entry) {
+                $entry->status = 'no-show';
+                if (!$entry->completed_at) {
+                    $entry->completed_at = $now;
+                }
+                $entry->save();
+
+                if (!$entry->appointment_id) {
+                    continue;
+                }
+
+                $appointment = Appointment::find($entry->appointment_id);
+                if ($appointment && $appointment->status !== 'no_show') {
+                    $appointment->status = 'no_show';
+                    $appointment->save();
+                    try {
+                        $appointment->load(['patient', 'doctor', 'service']);
+                        if (!empty($appointment->patient?->email)) {
+                            Mail::to($appointment->patient->email)->send(new AppointmentNoShowPatientMail($appointment));
+                        }
+                    } catch (\Throwable $e) {
+                        report($e);
+                    }
+                }
+            }
+        });
     }
 
     private function appointmentArrivalTime(Appointment $appointment): string

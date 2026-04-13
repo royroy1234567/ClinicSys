@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
 import MainLayout from '../components/layouts/MainLayout';
 import {
   Calendar, Clock, User, Phone, Mail, FileText,
@@ -66,6 +67,7 @@ const DOC_COLOR_CFG = {
 
 const inputCls = "w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 placeholder:text-gray-300 transition-all";
 const labelCls = "block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5";
+const BOOKING_DRAFT_KEY = 'patient_appointment_draft_v1';
 
 const authHeaders = () => {
   const token = localStorage.getItem('auth_token');
@@ -107,7 +109,7 @@ const MiniCalendar = ({ doctorSchedule, selectedDate, onSelect }) => {
     if(!d) return 'empty';
     const ds = fmtD(d);
     const now = new Date(); now.setHours(0,0,0,0);
-    if(d <= now) return 'past';
+    if(d < now) return 'past';
     const sched = doctorSchedule[ds];
     if(!sched) return 'no-schedule';
     const allSlots = sched.slots.flatMap(s => generateSlotTimes(s.start, s.end, s.duration));
@@ -185,15 +187,21 @@ const GeneralCalendar = ({ allDoctorSchedules, selectedDate, onSelect }) => {
     if(!d) return 'empty';
     const ds = fmtD(d);
     const now = new Date(); now.setHours(0,0,0,0);
-    if(d <= now) return 'past';
-    let hasAny = false;
-    for(const sched of Object.values(allDoctorSchedules)) {
+    if(d < now) return 'past';
+    const timeAvailability = {};
+    for (const sched of Object.values(allDoctorSchedules)) {
       const day = sched[ds];
       if(!day) continue;
-      const allSlots = day.slots.flatMap(s => generateSlotTimes(s.start, s.end, s.duration));
-      const totalBooked = day.slots.reduce((a,s) => a + (s.booked||0), 0);
-      if(allSlots.length - totalBooked > 0) { hasAny = true; break; }
+      day.slots.forEach(slotRange => {
+        const times = generateSlotTimes(slotRange.start, slotRange.end, slotRange.duration);
+        const bookedCount = slotRange.booked || 0;
+        times.forEach((time, idx) => {
+          if (!timeAvailability[time]) timeAvailability[time] = false;
+          if (idx >= bookedCount) timeAvailability[time] = true;
+        });
+      });
     }
+    const hasAny = Object.values(timeAvailability).some(Boolean);
     return hasAny ? 'available' : 'no-schedule';
   };
 
@@ -276,9 +284,32 @@ export default function PatientAppointmentPage() {
   const [notifs,    setNotifs]    = useState([]);
   const [newAptId,  setNewAptId]  = useState(null);
   const [followUpSource, setFollowUpSource] = useState(null);
+  const [hasPendingAppointment, setHasPendingAppointment] = useState(false);
 
   // For general booking: available slots across all doctors for a selected date/time
   const [generalSlots, setGeneralSlots] = useState([]); // [{doctorId, doctorName, doctorColor, time}]
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(BOOKING_DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (!draft || typeof draft !== 'object') return;
+
+      if (draft.bookingMode === 'general' || draft.bookingMode === 'specific') {
+        setBookingMode(draft.bookingMode);
+      }
+      if (typeof draft.step === 'string') setStep(draft.step);
+      if (typeof draft.selDate === 'string') setSelDate(draft.selDate);
+      if (typeof draft.selTime === 'string') setSelTime(draft.selTime);
+      if (draft.selDoctor && typeof draft.selDoctor === 'object') setSelDoctor(draft.selDoctor);
+      if (draft.form && typeof draft.form === 'object') {
+        setForm((prev) => ({ ...prev, ...draft.form }));
+      }
+    } catch {
+      localStorage.removeItem(BOOKING_DRAFT_KEY);
+    }
+  }, []);
 
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const dismissNotif = (id) => setNotifs(n=>n.filter(x=>x.id!==id));
@@ -290,7 +321,7 @@ export default function PatientAppointmentPage() {
     if (!fromFollowUp || !date) return;
 
     const today = new Date().toISOString().slice(0, 10);
-    if (date <= today) return;
+    if (date < today) return;
 
     setFollowUpSource({
       consultationId: params.get('consultation_id') || null,
@@ -301,6 +332,56 @@ export default function PatientAppointmentPage() {
     setSelDate(date);
     setSelTime('');
   }, [location.search]);
+
+  useEffect(() => {
+    const loadMyAppointments = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/appointments`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const rows = Array.isArray(data) ? data : data.data ?? [];
+        const today = new Date().toISOString().slice(0, 10);
+        const hasPending = rows.some((a) => {
+          const status = String(a.status ?? '').toLowerCase();
+          const apptDate = String(a.appointment_date ?? a.date ?? '');
+          return status === 'scheduled' && apptDate >= today;
+        });
+        setHasPendingAppointment(hasPending);
+      } catch {}
+    };
+    loadMyAppointments();
+  }, []);
+
+  useEffect(() => {
+    if (step === 'success') {
+      localStorage.removeItem(BOOKING_DRAFT_KEY);
+      return;
+    }
+    const draft = {
+      bookingMode,
+      step,
+      selDoctor,
+      selDate,
+      selTime,
+      form,
+    };
+    localStorage.setItem(BOOKING_DRAFT_KEY, JSON.stringify(draft));
+  }, [bookingMode, step, selDoctor, selDate, selTime, form]);
+
+  const handleBookingModeSelect = (mode) => {
+    if (hasPendingAppointment) {
+      toast.error('You already have a pending appointment. Complete/cancel it before booking again.');
+      return;
+    }
+    if (mode === 'general') {
+      setBookingMode('general');
+      setStep('general-calendar');
+    } else {
+      setBookingMode('specific');
+      setStep('doctors');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   /* ── Fetch logged-in patient profile ── */
   useEffect(() => {
@@ -487,13 +568,14 @@ export default function PatientAppointmentPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Booking failed.');
-      setNewAptId(`APT-${String(data.appointment_id).padStart(5,'0')}`);
+      setNewAptId(data.appointment_number || `APT-${String(data.appointment_id).padStart(5,'0')}`);
       setNotifs(prev=>[{
         id: Date.now(),
         msg: `✅ Appointment confirmed! ${selDoctor?.name} on ${fmtDateLong(selDate)} at ${fmtTime(selTime)}.`,
         type: 'success',
       }, ...prev]);
       setStep('success');
+      localStorage.removeItem(BOOKING_DRAFT_KEY);
       window.scrollTo({ top:0, behavior:'smooth' });
     } catch (err) {
       setNotifs(prev=>[{ id:Date.now(), msg: err.message, type:'error' }, ...prev]);
@@ -509,6 +591,7 @@ export default function PatientAppointmentPage() {
     setForm({ ...patientInfo, service_id:'', reason:'', notes:'' });
     setStep('type-select');
     setGeneralSlots([]);
+    localStorage.removeItem(BOOKING_DRAFT_KEY);
     window.scrollTo({ top:0, behavior:'smooth' });
   };
 
@@ -609,7 +692,7 @@ export default function PatientAppointmentPage() {
 
               {/* General Appointment */}
               <button
-                onClick={() => { setBookingMode('general'); setStep('general-calendar'); window.scrollTo({top:0,behavior:'smooth'}); }}
+                onClick={() => handleBookingModeSelect('general')}
                 className="group relative bg-white border-2 border-gray-100 rounded-3xl p-7 text-left hover:border-indigo-300 hover:shadow-xl hover:shadow-indigo-50 transition-all duration-200 flex flex-col gap-4"
               >
                 <div className="w-14 h-14 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
@@ -632,7 +715,7 @@ export default function PatientAppointmentPage() {
 
               {/* Specific Doctor */}
               <button
-                onClick={() => { setBookingMode('specific'); setStep('doctors'); window.scrollTo({top:0,behavior:'smooth'}); }}
+                onClick={() => handleBookingModeSelect('specific')}
                 className="group bg-white border-2 border-gray-100 rounded-3xl p-7 text-left hover:border-blue-300 hover:shadow-xl hover:shadow-blue-50 transition-all duration-200 flex flex-col gap-4"
               >
                 <div className="w-14 h-14 rounded-2xl bg-blue-50 group-hover:bg-blue-100 flex items-center justify-center transition-colors">

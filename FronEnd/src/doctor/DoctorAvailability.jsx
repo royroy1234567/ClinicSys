@@ -116,6 +116,10 @@ const AVAILABLE_HOURS = [
   { value: '16', label: '4', period: 'PM' },
   { value: '17', label: '5', period: 'PM' },
   { value: '18', label: '6', period: 'PM' },
+  { value: '19', label: '7', period: 'PM' },
+  { value: '20', label: '8', period: 'PM' },
+  { value: '21', label: '9', period: 'PM' },
+  { value: '22', label: '10', period: 'PM' },
 ];
 
 const MINUTES = ['00', '15', '30', '45'];
@@ -482,7 +486,7 @@ export default function AvailabilityPage() {
   const DOCTOR_USER_ID  = user?.user_id ?? null;
   const doctorName      = user ? `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() : '—';
   const doctorAvatar    = user ? `${user.first_name?.[0] ?? ''}${user.last_name?.[0] ?? ''}`.toUpperCase() : '??';
-  const doctorId        = user?.user_id ? `DR-${String(user.user_id).padStart(4,'0')}` : '—';
+  const doctorId        = user?.public_id || (user?.user_id ? `DCT-${String(user.user_id).padStart(4,'0')}` : '—');
   const doctorSpecialty = user?.role ?? 'General Medicine';
 
   const doctorStatus = 'available';

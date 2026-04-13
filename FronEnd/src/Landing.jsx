@@ -52,7 +52,7 @@ function AnimatedCounter({ target, suffix = "" }) {
   return <span ref={ref}>{typeof count === "number" ? count : target}{suffix}</span>;
 }
 
-const SERVICES = [
+const SERVICE_CATEGORIES = [
   { icon: "🩺", title: "General Consultation", desc: "One-on-one medical consultation with our licensed physicians for any health concern." },
   { icon: "❤️", title: "Health Check-ups", desc: "Routine physical examinations and wellness assessments for all ages." },
   { icon: "💊", title: "Common Illness Treatment", desc: "Diagnosis and treatment of fever, cough, colds, flu, and other everyday ailments." },
@@ -60,6 +60,12 @@ const SERVICES = [
   { icon: "🩹", title: "Minor Wound Care", desc: "Proper cleaning, dressing, and management of minor cuts, wounds, and injuries." },
   { icon: "📄", title: "Medical Certificates", desc: "Issuance of medical certificates for school, work, or other official requirements." },
 ];
+
+const SERVICE_ICON_BY_CATEGORY = {
+  consultation: "🩺",
+  procedure: "🩹",
+  fee: "📄",
+};
 
 const REASONS = [
   { icon: "👨‍⚕️", title: "Experienced Staff", desc: "Licensed healthcare professionals dedicated to your well-being." },
@@ -96,6 +102,11 @@ export default function ClinicSysLanding() {
   const [activeDay,   setActiveDay]   = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [clinicInfo,  setClinicInfo]  = useState(DEFAULT_CLINIC);
+  const [serviceCategories, setServiceCategories] = useState(SERVICE_CATEGORIES);
+  const [servicesCount, setServicesCount] = useState(SERVICE_CATEGORIES.length);
+  const [patientsServed, setPatientsServed] = useState(500);
+  const [doctorsCount, setDoctorsCount] = useState(3);
+  const [todaySlots, setTodaySlots] = useState({ total: 14, booked: 9, remaining: 5 });
 
   const { user, logout } = useAuth();
   const navigate         = useNavigate();
@@ -125,6 +136,53 @@ export default function ClinicSysLanding() {
       .catch(() => { /* fallback to DEFAULT_CLINIC */ });
   }, []);
 
+  useEffect(() => {
+    fetch(`${API_BASE}/landing-stats`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+
+        const nextPatientsServed = Number(data.patients_served);
+        if (Number.isFinite(nextPatientsServed) && nextPatientsServed >= 0) {
+          setPatientsServed(nextPatientsServed);
+        }
+
+        const nextDoctorsCount = Number(data.doctors_count);
+        if (Number.isFinite(nextDoctorsCount) && nextDoctorsCount >= 0) {
+          setDoctorsCount(nextDoctorsCount);
+        }
+
+        const dbServices = Array.isArray(data.services) ? data.services : [];
+        if (dbServices.length > 0) {
+          const mappedServices = dbServices.map((service, index) => ({
+            icon: SERVICE_ICON_BY_CATEGORY[String(service.category ?? "").toLowerCase()] ?? SERVICE_CATEGORIES[index % SERVICE_CATEGORIES.length].icon,
+            title: service.service_name ?? `Service ${index + 1}`,
+            desc: service.description ?? "Primary care service available at our clinic.",
+          }));
+          setServiceCategories(mappedServices);
+          setServicesCount(mappedServices.length);
+        } else {
+          const nextServicesCount = Number(data.services_count);
+          if (Number.isFinite(nextServicesCount) && nextServicesCount >= 0) {
+            setServicesCount(nextServicesCount);
+          }
+        }
+
+        const slotPayload = data.today_slots ?? {};
+        const total = Number(slotPayload.total);
+        const booked = Number(slotPayload.booked);
+        const remaining = Number(slotPayload.remaining);
+        if (Number.isFinite(total) && Number.isFinite(booked) && Number.isFinite(remaining)) {
+          setTodaySlots({
+            total: Math.max(0, total),
+            booked: Math.max(0, booked),
+            remaining: Math.max(0, remaining),
+          });
+        }
+      })
+      .catch(() => { /* keep landing defaults */ });
+  }, []);
+
   /* ── Scroll + clock ── */
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -150,6 +208,8 @@ export default function ClinicSysLanding() {
 
   const todaySchedule = SCHEDULE.find(s => s.day === activeDay);
   const isOpen        = todaySchedule?.open ?? false;
+  const slotBarCount = Math.max(todaySlots.total, 1);
+  const bookedBarCount = Math.min(todaySlots.booked, slotBarCount);
 
   const formatTime = (d) => d.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true });
   const formatDate = (d) => d.toLocaleDateString("en-PH", { weekday: "long", month: "long", day: "numeric" });
@@ -427,17 +487,17 @@ export default function ClinicSysLanding() {
                       <div style={{ fontSize: "0.72rem", color: "var(--success)", fontWeight: 600 }}>Slots available</div>
                     </div>
                     <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-                      {Array.from({ length: 14 }).map((_, i) => (
-                        <div key={i} className="avail-bar-seg" style={{ background: i < 9 ? "#BFDBFE" : "#E2E8F0", opacity: i < 9 ? 1 : 0.5 }}/>
+                      {Array.from({ length: slotBarCount }).map((_, i) => (
+                        <div key={i} className="avail-bar-seg" style={{ background: i < bookedBarCount ? "#BFDBFE" : "#E2E8F0", opacity: i < bookedBarCount ? 1 : 0.5 }}/>
                       ))}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68rem", color: "#94A3B8" }}>
-                      <span>🔵 9 booked</span><span>⬜ 5 remaining</span>
+                      <span>🔵 {todaySlots.booked} booked</span><span>⬜ {todaySlots.remaining} remaining</span>
                     </div>
                   </div>
                   {/* Quick stats */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
-                    {[{ icon:"🩺", label:"Services", value:"6" },{ icon:"👨‍⚕️", label:"Doctors", value:"3" },{ icon:"⏱️", label:"Wait Time", value:"~15m" }].map((s, i) => (
+                    {[{ icon:"🩺", label:"Services", value:String(servicesCount) },{ icon:"👨‍⚕️", label:"Doctors", value:String(doctorsCount) },{ icon:"⏱️", label:"Wait Time", value:"~15m" }].map((s, i) => (
                       <div key={i} style={{ background: "#F8FAFC", borderRadius: 12, padding: "12px 8px", textAlign: "center", border: "1px solid #E2E8F0" }}>
                         <div style={{ fontSize: "1.2rem", marginBottom: 4 }}>{s.icon}</div>
                         <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.9rem", lineHeight: 1 }}>{s.value}</div>
@@ -456,7 +516,7 @@ export default function ClinicSysLanding() {
                   )}
                 </div>
                 <div style={{ position: "absolute", top: -14, right: 20, background: "var(--primary)", color: "#fff", fontSize: "0.7rem", fontWeight: 700, padding: "6px 14px", borderRadius: 99, boxShadow: "0 4px 16px rgba(37,99,235,0.35)", whiteSpace: "nowrap" }}>
-                  ✅ 5 Slots Open Today
+                  ✅ {todaySlots.remaining} Slots Open Today
                 </div>
               </div>
             </Reveal>
@@ -469,9 +529,9 @@ export default function ClinicSysLanding() {
         <div style={{ maxWidth: 1152, margin: "0 auto" }} className="two-col">
           <Reveal direction="left">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              {[
-                { val: "500", suffix: "+", label: "Patients Served", main: true },
-                { val: "6",   suffix: "",  label: "Services Offered" },
+              {[ 
+                { val: String(patientsServed), suffix: "", label: "Patients Served", main: true },
+                { val: String(servicesCount), suffix: "", label: "Services Offered" },
                 { val: "Mon–Sat", suffix: "", label: "Open Days" },
                 { val: "8AM–5PM", suffix: "", label: "Clinic Hours" },
               ].map((s, i) => (
@@ -520,7 +580,7 @@ export default function ClinicSysLanding() {
             </div>
           </Reveal>
           <div className="services-grid">
-            {SERVICES.map((s, i) => (
+            {serviceCategories.map((s, i) => (
               <Reveal key={i} delay={i * 80}>
                 <div className="service-card">
                   <div style={{ width: 48, height: 48, borderRadius: 12, background: "var(--secondary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem", flexShrink: 0 }}>{s.icon}</div>
@@ -676,8 +736,8 @@ export default function ClinicSysLanding() {
           </div>
           <div>
             <div style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#334155", marginBottom: 16 }}>Services</div>
-            {["General Consultation","Health Check-ups","Common Illness Treatment","BP & Vital Monitoring","Minor Wound Care","Medical Certificates"].map(s => (
-              <div key={s} style={{ fontSize: "0.83rem", color: "#64748B", marginBottom: 8 }}>{s}</div>
+            {serviceCategories.map((service) => (
+              <div key={service.title} style={{ fontSize: "0.83rem", color: "#64748B", marginBottom: 8 }}>{service.title}</div>
             ))}
           </div>
           <div>

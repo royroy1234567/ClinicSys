@@ -11,6 +11,9 @@ const LoginPage = () => {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [shake, setShake]       = useState(false);
+  const [otpCode, setOtpCode]   = useState('');
+  const [otpToken, setOtpToken] = useState('');
+  const [otpStep, setOtpStep]   = useState(false);
   const { login }               = useAuth();
   const navigate                = useNavigate();
 
@@ -24,7 +27,14 @@ const handleSubmit = async (e) => {
   setLoading(true);
   try {
     // ✅ Just pass email + password — AuthContext handles the fetch
-    const result = await login(email, password);
+    const result = await login(email, password, otpStep ? { otpCode, otpToken } : null);
+
+    if (result?.requiresOtp) {
+      setOtpStep(true);
+      setOtpToken(result.otpToken || '');
+      setError(result.message || 'Check your email for OTP.');
+      return;
+    }
 
     if (!result.success) {
       setError(result.error);
@@ -417,6 +427,30 @@ const handleSubmit = async (e) => {
               </div>
             </div>
 
+            {otpStep && (
+              <div className="field-group">
+                <label className="field-label" htmlFor="otp">Email OTP Code</label>
+                <input
+                  id="otp"
+                  className={`field-input ${error ? 'error-field' : ''}`}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="Enter 6-digit code"
+                  value={otpCode}
+                  onChange={e => {
+                    const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setOtpCode(cleaned);
+                    setError('');
+                  }}
+                  required
+                />
+                <p style={{ marginTop: 6, fontSize: '0.72rem', color: '#64748B' }}>
+                  We sent a verification code to your email.
+                </p>
+              </div>
+            )}
+
             {/* Remember + Forgot */}
             <div className="check-row">
               <label className="check-label" onClick={() => setRemember(!remember)}>
@@ -429,7 +463,7 @@ const handleSubmit = async (e) => {
                 </div>
                 Remember me
               </label>
-              <a href="#" className="forgot-link">Forgot Password?</a>
+              <Link to="/forgot-password" className="forgot-link">Forgot Password?</Link>
             </div>
 
             <button type="submit" className="btn-submit" disabled={loading} data-testid="login-submit-button">

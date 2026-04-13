@@ -382,7 +382,7 @@ export default function StaffDoctorsPage() {
         const status   = deriveStatus(scheduleMap);
         const fullName = `Dr. ${u.first_name} ${u.last_name}`;
         return {
-          id:             `DR-${String(u.user_id).padStart(5, '0')}`,
+          id:             u.public_id || `DCT-${String(u.user_id).padStart(5, '0')}`,
           userId:         u.user_id,
           name:           fullName,
           specialization: u.specialization ?? u.license_number ?? 'General Physician',

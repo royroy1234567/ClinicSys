@@ -3,10 +3,11 @@ import MainLayout from '../components/layouts/MainLayout';
 import { api } from '../services/Api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { toast } from 'sonner';
 import {
   Users, Bell, Clock, UserPlus, CalendarIcon, ChevronDown,
   X, Check, RefreshCw, Stethoscope, Hash, PlayCircle,
-  CheckCircle2, UserX, PhoneCall,
+  CheckCircle2, PhoneCall,
   ChevronRight, Activity, Mic, LayoutGrid, List, Search,
   UserCheck, PlusCircle, Star,
 } from 'lucide-react';
@@ -85,7 +86,19 @@ const normalizeQueueRow = (row) => {
     priority: PRIORITY_CFG[rawPriority] ? rawPriority : 'walkin',
     status: STATUS_CFG[rawStatus] ? rawStatus : 'waiting',
     arrival: row?.arrival ?? (row?.arrival_time ? String(row.arrival_time).slice(0, 5) : getNowHHMM()),
+    calledAt: row?.called_at || null,
+    calledDeadlineAt: row?.called_deadline_at || null,
   };
+};
+
+const getCalledTimerText = (deadlineIso) => {
+  if (!deadlineIso) return null;
+  const diffMs = new Date(deadlineIso).getTime() - Date.now();
+  if (diffMs <= 0) return '00:00';
+  const totalSeconds = Math.ceil(diffMs / 1000);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
@@ -103,6 +116,16 @@ const isReadyToCall = (q) => {
   const arr = toMinutes(q.arrival);
   if (arr == null) return true;
   return nowMinutes >= arr;
+};
+
+const normalizeMobileInput = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  let core = digits;
+  if (core.startsWith('63')) core = core.slice(2);
+  if (core.startsWith('0')) core = core.slice(1);
+  core = core.slice(0, 10);
+  return core ? `+63${core}` : '';
 };
 
 let _counter = 9;
@@ -313,7 +336,7 @@ function PatientSearchInput({ value, onSelect, onNewPatient, patients }) {
    WALK-IN MODAL
    Priority is auto-derived from age (60+ = senior)
 ═══════════════════════════════ */
-const EMPTY_FORM = { patientId: null, name: '', age: '', contact: '', reason: '', serviceId: '', isExisting: false };
+const EMPTY_FORM = { patientId: null, name: '', age: '', contact: '', serviceId: '', isExisting: false };
 
 function WalkinModal({ nextNum, onClose, onSave, saving, patients, services }) {
   const [form,   setForm]   = useState({ ...EMPTY_FORM });
@@ -340,10 +363,12 @@ function WalkinModal({ nextNum, onClose, onSave, saving, patients, services }) {
   const validate = () => {
     const e = {};
     if (!form.name.trim())   e.name   = 'Patient name required';
-    if (!form.reason.trim()) e.reason = 'Reason required';
     if (!form.serviceId)      e.serviceId = 'Please select a service';
-    if (form.age && (isNaN(form.age) || parseInt(form.age) < 0 || parseInt(form.age) > 120))
-      e.age = 'Enter a valid age (0–120)';
+    if (form.age && (isNaN(form.age) || parseInt(form.age, 10) < 18 || parseInt(form.age, 10) > 100))
+      e.age = 'Enter a valid age (18–100)';
+    if (form.contact && !/^\+63\d{10}$/.test(form.contact)) {
+      e.contact = 'Contact must be +63 followed by 10 digits';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -400,9 +425,15 @@ function WalkinModal({ nextNum, onClose, onSave, saving, patients, services }) {
           <FieldRow label="Age">
             <div className="relative">
               <input
-                type="number" min="0" max="120"
+                type="number" min="18" max="100"
                 value={form.age}
-                onChange={e => set('age', e.target.value)}
+                onKeyDown={(e) => {
+                  if (['e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault();
+                }}
+                onChange={e => {
+                  const digitsOnly = String(e.target.value).replace(/\D/g, '');
+                  set('age', digitsOnly);
+                }}
                 placeholder="e.g. 65"
                 className={inputCls}
               />
@@ -421,14 +452,12 @@ function WalkinModal({ nextNum, onClose, onSave, saving, patients, services }) {
           </FieldRow>
 
           <FieldRow label="Contact Number">
-            <input value={form.contact} onChange={e => set('contact', e.target.value)}
+            <input
+              value={form.contact}
+              inputMode="numeric"
+              onChange={e => set('contact', normalizeMobileInput(e.target.value))}
               placeholder="+63 9XX XXX XXXX" className={inputCls} />
-          </FieldRow>
-
-          <FieldRow label="Reason for Visit" required>
-            <input value={form.reason} onChange={e => set('reason', e.target.value)}
-              placeholder="Chief complaint…" className={inputCls} />
-            {errors.reason && <p className="text-xs text-red-500">⚠ {errors.reason}</p>}
+            {errors.contact && <p className="text-xs text-red-500">⚠ {errors.contact}</p>}
           </FieldRow>
 
           <FieldRow label="Select Service" required>
@@ -487,7 +516,6 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onAddWalkin, onAssignDoctor 
   const docQueue = sortByPriority(queue.filter(q => q.doctor === doctor.name));
   const serving  = docQueue.find(q => ['ongoing', 'called'].includes(q.status));
   const waiting  = docQueue.filter(q => q.status === 'waiting');
-  const readyWaiting = waiting.filter(isReadyToCall);
   const done     = docQueue.filter(q => ['completed', 'no_show'].includes(q.status)).length;
 
   return (
@@ -536,17 +564,18 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onAddWalkin, onAssignDoctor 
               </div>
             </div>
             <div className="flex gap-1.5">
-              <button onClick={() => onUpdate(serving.id, 'no_show')}
-                className="flex items-center justify-center gap-1 text-xs font-bold bg-white border border-gray-300 hover:bg-gray-50 text-gray-600 px-2 py-1.5 rounded-lg">
-                <UserX className="w-3 h-3" /> No-show
-              </button>
+              {serving.status === 'called' && serving.calledDeadlineAt && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-1 rounded-lg">
+                  Auto no-show in {getCalledTimerText(serving.calledDeadlineAt) || '00:00'}
+                </span>
+              )}
             </div>
           </div>
         ) : (
           <div className="mx-3 mb-2 rounded-xl border border-dashed border-gray-200 p-3 text-center">
             <p className="text-xs text-gray-400">No patient being served</p>
             {waiting.length > 0 && (
-              <button onClick={() => readyWaiting[0] && onUpdate(readyWaiting[0].id, 'called')}
+              <button onClick={() => waiting[0] && onUpdate(waiting[0].id, 'called')}
                 disabled={doctor.availability_status !== 'available'}
                 className="mt-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-lg inline-flex items-center gap-1">
                 <PhoneCall className="w-3 h-3" /> Call Next
@@ -573,13 +602,9 @@ function DoctorQueueCard({ doctor, queue, onUpdate, onAddWalkin, onAssignDoctor 
                 </div>
                 <div className="flex gap-0.5 flex-shrink-0">
                   <button onClick={() => onUpdate(q.id, 'called')} title="Call"
-                    disabled={doctor.availability_status !== 'available' || q.doctor === 'TBD' || !isReadyToCall(q)}
+                    disabled={doctor.availability_status !== 'available' || q.doctor === 'TBD'}
                     className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300">
                     <Mic className="w-3 h-3" />
-                  </button>
-                  <button onClick={() => onUpdate(q.id, 'no_show')} title="No-show"
-                    className="w-6 h-6 rounded-md border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600">
-                    <UserX className="w-3 h-3" />
                   </button>
                   {q.doctor === 'TBD' && (
                     <button onClick={() => onAssignDoctor(q.id, doctor.id)} title="Assign this doctor"
@@ -615,7 +640,7 @@ export default function QueuePanel() {
   const [errorMsg,   setErrorMsg]   = useState('');
 
   useEffect(() => {
-    const t = setInterval(() => setTime(getNow()), 60000);
+    const t = setInterval(() => setTime(getNow()), 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -729,6 +754,14 @@ export default function QueuePanel() {
 
   const updateStatus = async (id, status) => {
     if (['ongoing', 'completed'].includes(status)) return;
+    const target = queue.find((q) => String(q.id) === String(id));
+    if (status === 'called' && target && !isReadyToCall(target)) {
+      toast({
+        title: 'Not yet scheduled time',
+        description: 'This appointment cannot be called before the scheduled time.',
+      });
+      return;
+    }
     setErrorMsg('');
     setQueue(prev => prev.map(q => q.id === id ? { ...q, status } : q));
     if (!Number.isFinite(Number(id))) return;
@@ -766,7 +799,6 @@ export default function QueuePanel() {
         contact:  form.contact,
         doctor:   'TBD',
         priority: form.priority,   // already derived in modal
-        reason:   form.reason,
         status:   'waiting',
         arrival:  getNow(),
       }]);
@@ -958,7 +990,7 @@ export default function QueuePanel() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-y border-gray-100 bg-gray-50">
-                      {['Queue #', 'Patient', 'Age', 'Priority', 'Doctor', 'Reason', 'Arrival', 'Status', 'Actions'].map(h => (
+                      {['Queue #', 'Patient', 'Age', 'Priority', 'Doctor', 'Arrival', 'Status', 'Actions'].map(h => (
                         <th key={h} className="text-left py-2.5 px-3 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -966,7 +998,7 @@ export default function QueuePanel() {
                   <tbody className="divide-y divide-gray-50">
                     {tableData.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="text-center py-14">
+                        <td colSpan={8} className="text-center py-14">
                           <Users className="w-10 h-10 mx-auto text-gray-200 mb-2" />
                           <p className="text-sm text-gray-400">No active patients in queue</p>
                         </td>
@@ -1005,9 +1037,6 @@ export default function QueuePanel() {
                               <span className="truncate max-w-[100px]">{q.doctor.replace('Dr. ', '')}</span>
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-xs text-gray-500 max-w-[130px]">
-                            <span className="block truncate">{q.reason}</span>
-                          </td>
                           <td className="py-3 px-3 text-xs text-gray-500 whitespace-nowrap">
                             <span>{q.arrival}</span>
                             {q.priority === 'appointment' && (
@@ -1015,13 +1044,24 @@ export default function QueuePanel() {
                                 {readyToCall ? 'Ready' : 'Not yet'}
                               </span>
                             )}
+                            {q.status === 'called' && q.calledDeadlineAt && (
+                              <span className="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700">
+                                Auto no-show in {getCalledTimerText(q.calledDeadlineAt) || '00:00'}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3"><StatusBadge status={q.status} /></td>
                           <td className="py-3 px-3">
                             <div className="flex items-center gap-1">
                               {q.status === 'waiting' && (
-                                <button onClick={() => updateStatus(q.id, 'called')} title="Call Patient"
-                                  disabled={q.doctor === 'TBD' || q.doctorAvailability !== 'available' || !readyToCall}
+                                <button onClick={() => {
+                                    if (!readyToCall) {
+                                      toast({ title: 'Not yet scheduled time', description: 'This appointment cannot be called before the scheduled time.' });
+                                      return;
+                                    }
+                                    updateStatus(q.id, 'called');
+                                  }} title="Call Patient"
+                                  disabled={q.doctor === 'TBD' || q.doctorAvailability !== 'available'}
                                   className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:text-blue-600 hover:border-blue-300 transition-colors">
                                   <Mic className="w-4.5 h-4.5" />
                                 </button>
@@ -1036,12 +1076,6 @@ export default function QueuePanel() {
                                     .filter(d => Number.isFinite(Number(d.id)))
                                     .map((d) => ({ value: d.id, label: `${d.name} (${d.availability_status || 'unavailable'})` }))}
                                 />
-                              )}
-                              {['waiting', 'called'].includes(q.status) && (
-                                <button onClick={() => updateStatus(q.id, 'no_show')} title="Mark No-show"
-                                  className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:text-gray-600 transition-colors">
-                                  <UserX className="w-4.5 h-4.5" />
-                                </button>
                               )}
                             </div>
                           </td>

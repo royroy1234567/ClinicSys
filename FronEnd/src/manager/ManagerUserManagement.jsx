@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import {
   Search, ChevronDown, Check, X,
-  Shield, Stethoscope, Users, UserCheck, UserX, KeyRound,
+  Shield, Stethoscope, Users, KeyRound,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Briefcase, Eye,
 } from 'lucide-react';
@@ -40,6 +40,7 @@ const apiFetch = async (path, options = {}) => {
 };
 
 const getRawId = (user) => user?.user_id ?? user?.raw_id ?? user?.id;
+const getPublicId = (user) => user?.public_id || '—';
 
 /* ══════════════ SMALL COMPONENTS ══════════════ */
 const RoleBadge = ({ role }) => {
@@ -82,18 +83,16 @@ const InfoRow = ({ label, value }) => (
 
 /* ══════════════ KPI CARD ══════════════ */
 const KPICard = ({ label, value, icon: Icon, iconBg, iconColor, loading }) => (
-  <Card>
+  <Card className="py-0 gap-0 rounded-2xl border-gray-200 bg-white shadow-sm">
     <CardContent className="p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-          {loading
-            ? <div className="w-8 h-7 bg-gray-100 rounded animate-pulse mt-0.5" />
-            : <p className="text-2xl font-bold text-gray-900 mt-0.5">{value}</p>}
+      <div className="flex flex-col items-start text-left gap-2.5">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconBg}`}>
+          <Icon className={`w-4 h-4 ${iconColor}`} />
         </div>
-        <div className={`p-2.5 rounded-xl ${iconBg}`}>
-          <Icon className={`w-5 h-5 ${iconColor}`} />
-        </div>
+        {loading
+          ? <div className="w-10 h-8 bg-gray-100 rounded animate-pulse" />
+          : <p className="text-3xl font-extrabold text-gray-900 leading-none">{value}</p>}
+        <p className="text-sm font-semibold text-gray-500">{label}</p>
       </div>
     </CardContent>
   </Card>
@@ -288,10 +287,6 @@ export default function UserManagementPage() {
   const paginated  = users.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const total    = users.length;
-  const active   = users.filter(u => u.status?.toLowerCase() === 'active').length;
-  const inactive = users.filter(u => u.status?.toLowerCase() === 'inactive').length;
-  const managers = users.filter(u => u.role?.toLowerCase() === 'manager').length;
-  const admins   = users.filter(u => u.role?.toLowerCase() === 'admin').length;
   const doctors  = users.filter(u => u.role?.toLowerCase() === 'doctor').length;
   const staff    = users.filter(u => u.role?.toLowerCase() === 'staff').length;
 
@@ -303,45 +298,11 @@ export default function UserManagementPage() {
       <div className="space-y-5">
 
         {/* KPI CARDS */}
-        <div className="grid grid-cols-3 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <KPICard label="Total"    value={total}    icon={Users}       iconBg="bg-blue-50"   iconColor="text-blue-600"   loading={loading} />
-          <KPICard label="Active"   value={active}   icon={UserCheck}   iconBg="bg-green-50"  iconColor="text-green-600"  loading={loading} />
-          <KPICard label="Inactive" value={inactive} icon={UserX}       iconBg="bg-gray-50"   iconColor="text-gray-500"   loading={loading} />
-          <KPICard label="Managers" value={managers} icon={Briefcase}   iconBg="bg-orange-50" iconColor="text-orange-600" loading={loading} />
-          <KPICard label="Admins"   value={admins}   icon={Shield}      iconBg="bg-purple-50" iconColor="text-purple-600" loading={loading} />
           <KPICard label="Doctors"  value={doctors}  icon={Stethoscope} iconBg="bg-blue-50"   iconColor="text-blue-600"   loading={loading} />
           <KPICard label="Staff"    value={staff}    icon={Users}       iconBg="bg-teal-50"   iconColor="text-teal-600"   loading={loading} />
         </div>
-
-        {/* ROLE ACCESS REFERENCE */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="w-5 h-5 text-blue-600" /> Role Access Reference
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(ROLE_CONFIG).map(([key, cfg]) => {
-                const Icon = cfg.icon;
-                return (
-                  <div key={key} className={`rounded-xl border p-4 ${cfg.bg} ${cfg.border}`}>
-                    <div className={`flex items-center gap-2 mb-3 ${cfg.color}`}>
-                      <Icon className="w-5 h-5" /><span className="font-bold text-sm">{cfg.label}</span>
-                    </div>
-                    <ul className="space-y-1.5">
-                      {cfg.access.map(a => (
-                        <li key={a} className={`flex items-center gap-1.5 text-xs font-medium ${cfg.color}`}>
-                          <Check className="w-3 h-3 flex-shrink-0" /> {a}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
 
         {/* TABLE */}
         <Card data-testid="users-list-card">
@@ -412,6 +373,7 @@ export default function UserManagementPage() {
                             <div>
                               <p className="font-semibold text-gray-900 leading-tight">{fullName(user)}</p>
                               <p className="text-xs text-gray-400">@{user.username}</p>
+                              <p className="text-xs font-mono text-gray-400">{getPublicId(user)}</p>
                               <p className="text-xs text-gray-400">{user.email}</p>
                             </div>
                           </div>

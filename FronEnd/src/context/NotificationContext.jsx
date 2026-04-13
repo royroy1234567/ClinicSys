@@ -6,6 +6,48 @@ const NotificationContext = createContext();
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://backend1.test/api';
 const POLL_INTERVAL_MS = 45000;
 const MAX_NOTIFICATIONS = 20;
+const ALLOWED_REMINDER_HOURS = ['1', '2', '6', '12', '24', '48'];
+
+const ROLE_PREF_DEFAULTS = {
+  patient: {
+    confirmation: true,
+    reminder: true,
+    updates: true,
+    promo: false,
+  },
+  doctor: {
+    newAppointment: true,
+    cancellation: true,
+    reminder: true,
+    patientArrival: true,
+    systemAnnounce: false,
+  },
+  staff: {
+    appointments: true,
+    queue: true,
+    system: false,
+  },
+  admin: {
+    emailAppointments: true,
+    emailFollowups: true,
+    emailReports: false,
+    smsAppointments: true,
+    smsFollowups: false,
+    inAppAll: true,
+    inAppAppointments: true,
+    inAppQueue: true,
+    inAppSystem: true,
+    reminderHours: '24',
+    dailySummary: true,
+    weeklySummary: false,
+  },
+  manager: {
+    appointments: true,
+    queue: true,
+    followups: true,
+    system: true,
+  },
+};
 
 const toArray = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -68,6 +110,82 @@ const withTimeSort = (items) =>
     .map((n) => ({ ...n, time: timeAgo(n.timestamp) }));
 
 const mk = ({ id, type, title, route, timestamp }) => ({ id, type, title, route, timestamp: timestamp || new Date() });
+const appointmentId = (a) => a?.appointment_id || a?.id || a?.reference_number || 'unknown';
+const roleDefaults = (role) => ({ ...(ROLE_PREF_DEFAULTS[role] || {}) });
+
+const validatePreference = (role, key, value) => {
+  const defaults = roleDefaults(role);
+  if (!(key in defaults)) {
+    return { ok: false, reason: `Unknown preference key: ${key}` };
+  }
+
+  if (key === 'reminderHours') {
+    const normalized = String(value);
+    if (!ALLOWED_REMINDER_HOURS.includes(normalized)) {
+      return { ok: false, reason: 'Invalid reminder hours value.' };
+    }
+    return { ok: true, value: normalized };
+  }
+
+  if (typeof value !== 'boolean') {
+    return { ok: false, reason: `Preference ${key} must be boolean.` };
+  }
+
+  return { ok: true, value };
+};
+
+const normalizePreferences = (role, incoming) => {
+  const defaults = roleDefaults(role);
+  const next = { ...defaults };
+  Object.entries(incoming || {}).forEach(([key, value]) => {
+    const result = validatePreference(role, key, value);
+    if (result.ok) {
+      next[key] = result.value;
+    }
+  });
+  return next;
+};
+
+const isEnabledForType = (role, prefs, type) => {
+  const p = prefs || {};
+  switch (role) {
+    case 'patient': {
+      if (type === 'appointment') return !!(p.confirmation || p.reminder);
+      if (type === 'status' || type === 'consultation' || type === 'followup') return !!p.updates;
+      if (type === 'promo') return !!p.promo;
+      return true;
+    }
+    case 'doctor': {
+      if (type === 'appointment') return !!p.newAppointment;
+      if (type === 'status') return !!p.cancellation;
+      if (type === 'summary') return !!p.reminder;
+      if (type === 'queue') return !!p.patientArrival;
+      if (type === 'system') return !!p.systemAnnounce;
+      if (type === 'followup') return !!p.reminder;
+      return true;
+    }
+    case 'staff': {
+      if (type === 'appointment') return !!p.appointments;
+      if (type === 'queue') return !!p.queue;
+      if (type === 'billing' || type === 'system' || type === 'summary') return !!p.system;
+      return true;
+    }
+    case 'admin': {
+      if (!p.inAppAll) return false;
+      if (type === 'appointment') return !!p.inAppAppointments;
+      if (type === 'queue') return !!p.inAppQueue;
+      return !!p.inAppSystem;
+    }
+    case 'manager': {
+      if (type === 'appointment') return !!p.appointments;
+      if (type === 'queue') return !!p.queue;
+      if (type === 'followup') return !!p.followups;
+      return !!p.system;
+    }
+    default:
+      return true;
+  }
+};
 
 const buildPatientNotifications = ({ appointments, consultations }) => {
   const now = new Date();
@@ -81,7 +199,7 @@ const buildPatientNotifications = ({ appointments, consultations }) => {
     if (status === 'scheduled' && diff !== null && diff >= 0 && diff <= 3) {
       rows.push(
         mk({
-          id: `patient-upcoming-${a.id}-${a.updated_at || a.created_at || when?.toISOString() || ''}`,
+          id: `patient-upcoming-${appointmentId(a)}-${a.updated_at || a.created_at || when?.toISOString() || ''}`,
           type: 'appointment',
           title: `Upcoming appointment on ${formatDate(when)} at ${formatTime(when)}`,
           route: '/my-appointments',
@@ -94,7 +212,7 @@ const buildPatientNotifications = ({ appointments, consultations }) => {
       const stamp = parseDateSafe(a.updated_at) || parseDateSafe(a.created_at) || when;
       rows.push(
         mk({
-          id: `patient-status-${a.id}-${status}`,
+          id: `patient-status-${appointmentId(a)}-${status}`,
           type: 'status',
           title: `Your appointment was marked ${status.replace('_', ' ')}`,
           route: '/my-appointments',
@@ -107,7 +225,7 @@ const buildPatientNotifications = ({ appointments, consultations }) => {
       const stamp = parseDateSafe(a.updated_at) || when || parseDateSafe(a.created_at);
       rows.push(
         mk({
-          id: `patient-completed-${a.id}`,
+          id: `patient-completed-${appointmentId(a)}`,
           type: 'consultation',
           title: 'Consultation completed. You can view details in Medical Records.',
           route: '/records',
@@ -262,6 +380,7 @@ const buildManagerNotifications = ({ appointments, queueEntries, consultations, 
   const now = new Date();
   const today = startOfDay(now);
   const rows = [];
+  const managerRoute = role === 'admin' ? '/admin-activity' : '/appointments';
 
   const todayAppointments = appointments.filter((a) => {
     const when = asDateTime(a.appointment_date || a.date, a.appointment_time || a.time);
@@ -274,7 +393,7 @@ const buildManagerNotifications = ({ appointments, queueEntries, consultations, 
         id: `manager-today-appts-${today.toISOString().slice(0, 10)}`,
         type: 'appointment',
         title: `${todayAppointments.length} active appointment${todayAppointments.length > 1 ? 's' : ''} scheduled today.`,
-        route: '/appointments',
+        route: managerRoute,
         timestamp: now,
       })
     );
@@ -287,7 +406,7 @@ const buildManagerNotifications = ({ appointments, queueEntries, consultations, 
         id: `manager-queue-waiting-${today.toISOString().slice(0, 10)}`,
         type: 'queue',
         title: `${waiting.length} patient${waiting.length > 1 ? 's are' : ' is'} waiting in queue.`,
-        route: '/appointments',
+        route: managerRoute,
         timestamp: parseDateSafe(waiting[0]?.updated_at || waiting[0]?.created_at) || now,
       })
     );
@@ -305,7 +424,7 @@ const buildManagerNotifications = ({ appointments, queueEntries, consultations, 
         id: `manager-followup-overdue-${today.toISOString().slice(0, 10)}`,
         type: 'followup',
         title: `${overdueFollowups.length} follow-up${overdueFollowups.length > 1 ? 's are' : ' is'} overdue.`,
-        route: '/appointments',
+        route: managerRoute,
         timestamp: now,
       })
     );
@@ -322,7 +441,7 @@ const buildManagerNotifications = ({ appointments, queueEntries, consultations, 
         id: `manager-new-patients-${today.toISOString().slice(0, 10)}`,
         type: 'patient',
         title: `${newPatientsToday.length} new patient${newPatientsToday.length > 1 ? 's were' : ' was'} registered today.`,
-        route: '/patients',
+        route: role === 'admin' ? '/acc-management' : '/patients',
         timestamp: parseDateSafe(newPatientsToday[0]?.created_at) || now,
       })
     );
@@ -367,6 +486,7 @@ export const NotificationProvider = ({ children }) => {
   const { user, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [readMap, setReadMap] = useState({});
+  const [preferences, setPreferences] = useState({});
   const [loading, setLoading] = useState(false);
 
   const queueEndpoint = useTodayQueueEndpoint();
@@ -375,6 +495,11 @@ export const NotificationProvider = ({ children }) => {
     if (!user) return null;
     return `clinicsys_notifications_read_${user.role}_${user.id || user.user_id || 'session'}`;
   }, [user]);
+  const preferencesStorageKey = useMemo(() => {
+    if (!user) return null;
+    return `clinicsys_notifications_pref_${user.role}_${user.id || user.user_id || 'session'}`;
+  }, [user]);
+  const currentRole = String(user?.role || '').toLowerCase();
 
   useEffect(() => {
     if (!readStorageKey) {
@@ -391,9 +516,27 @@ export const NotificationProvider = ({ children }) => {
   }, [readStorageKey]);
 
   useEffect(() => {
+    if (!preferencesStorageKey || !currentRole) {
+      setPreferences({});
+      return;
+    }
+    try {
+      const parsed = JSON.parse(localStorage.getItem(preferencesStorageKey) || '{}');
+      setPreferences(normalizePreferences(currentRole, parsed));
+    } catch {
+      setPreferences(roleDefaults(currentRole));
+    }
+  }, [preferencesStorageKey, currentRole]);
+
+  useEffect(() => {
     if (!readStorageKey) return;
     localStorage.setItem(readStorageKey, JSON.stringify(readMap));
   }, [readMap, readStorageKey]);
+
+  useEffect(() => {
+    if (!preferencesStorageKey || !currentRole) return;
+    localStorage.setItem(preferencesStorageKey, JSON.stringify(normalizePreferences(currentRole, preferences)));
+  }, [preferences, preferencesStorageKey, currentRole]);
 
   const attachReadState = useCallback((items) => {
     return items.map((n) => ({ ...n, read: !!readMap[n.id] }));
@@ -418,6 +561,32 @@ export const NotificationProvider = ({ children }) => {
     });
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, [notifications]);
+
+  const setNotificationPreference = useCallback((key, value) => {
+    if (!currentRole) return { ok: false, reason: 'No active role.' };
+    const validated = validatePreference(currentRole, key, value);
+    if (!validated.ok) return validated;
+
+    setPreferences((prev) => ({ ...prev, [key]: validated.value }));
+    return { ok: true };
+  }, [currentRole]);
+
+  const setNotificationPreferences = useCallback((partial) => {
+    if (!currentRole) return { ok: false, reason: 'No active role.' };
+    const entries = Object.entries(partial || {});
+    for (const [key, value] of entries) {
+      const validated = validatePreference(currentRole, key, value);
+      if (!validated.ok) return validated;
+    }
+
+    setPreferences((prev) => ({ ...prev, ...partial }));
+    return { ok: true };
+  }, [currentRole]);
+
+  const resetNotificationPreferences = useCallback(() => {
+    if (!currentRole) return;
+    setPreferences(roleDefaults(currentRole));
+  }, [currentRole]);
 
   const fetchJson = useCallback(async (path, token) => {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -499,11 +668,12 @@ export const NotificationProvider = ({ children }) => {
         });
       }
 
-      setNotifications(attachReadState(items));
+      const filteredItems = items.filter((n) => isEnabledForType(role, preferences, n.type));
+      setNotifications(attachReadState(filteredItems));
     } finally {
       setLoading(false);
     }
-  }, [attachReadState, fetchWithFallback, isAuthenticated, queueEndpoint, user]);
+  }, [attachReadState, fetchWithFallback, isAuthenticated, preferences, queueEndpoint, user]);
 
   useEffect(() => {
     let timerId = null;
@@ -523,11 +693,16 @@ export const NotificationProvider = ({ children }) => {
       notifications,
       unreadCount: notifications.filter((n) => !n.read).length,
       loading,
+      preferences,
       refresh,
       markAsRead,
       markAllRead,
+      setNotificationPreference,
+      setNotificationPreferences,
+      resetNotificationPreferences,
+      validateNotificationPreference: (key, value) => validatePreference(currentRole, key, value),
     }),
-    [loading, markAllRead, markAsRead, notifications, refresh]
+    [currentRole, loading, markAllRead, markAsRead, notifications, preferences, refresh, resetNotificationPreferences, setNotificationPreference, setNotificationPreferences]
   );
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

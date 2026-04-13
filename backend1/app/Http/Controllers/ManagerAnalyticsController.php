@@ -9,6 +9,51 @@ use Illuminate\Support\Facades\DB;
 
 class ManagerAnalyticsController extends Controller
 {
+    public function landingStats()
+    {
+        $today = Carbon::today()->toDateString();
+
+        $patientsServed = (int) DB::table('consultations')
+            ->where('status', 'completed')
+            ->whereNotNull('patient_id')
+            ->distinct('patient_id')
+            ->count('patient_id');
+
+        $services = DB::table('services')
+            ->where('status', 'active')
+            ->orderBy('category')
+            ->orderBy('service_name')
+            ->get(['service_id', 'service_name', 'description', 'category']);
+
+        $doctorsCount = (int) DB::table('clinic_users')
+            ->where('role', 'Doctor')
+            ->where('status', 'Active')
+            ->count();
+
+        $slotTotals = DB::table('schedule_slots')
+            ->join('doctor_schedules', 'doctor_schedules.schedule_id', '=', 'schedule_slots.schedule_id')
+            ->whereDate('doctor_schedules.schedule_date', $today)
+            ->selectRaw('COALESCE(SUM(schedule_slots.max_patients), 0) as total_slots')
+            ->selectRaw('COALESCE(SUM(schedule_slots.booked), 0) as booked_slots')
+            ->first();
+
+        $totalSlots = (int) ($slotTotals->total_slots ?? 0);
+        $bookedSlots = (int) ($slotTotals->booked_slots ?? 0);
+        $remainingSlots = max(0, $totalSlots - $bookedSlots);
+
+        return response()->json([
+            'patients_served' => $patientsServed,
+            'services_count' => $services->count(),
+            'services' => $services,
+            'doctors_count' => $doctorsCount,
+            'today_slots' => [
+                'total' => $totalSlots,
+                'booked' => $bookedSlots,
+                'remaining' => $remainingSlots,
+            ],
+        ]);
+    }
+
     public function dashboard(Request $request)
     {
         $request->validate([
@@ -21,7 +66,15 @@ class ManagerAnalyticsController extends Controller
         $bucketLabels = collect($buckets)->mapWithKeys(fn ($b) => [$b['key'] => $b['label']])->all();
 
         $appointments = DB::table('appointments')
-            ->select(['appointment_date', 'appointment_time', 'status', 'doctor_id', 'patient_id'])
+            ->select([
+                'appointment_date',
+                'appointment_time',
+                'status',
+                'doctor_id',
+                'patient_id',
+                'cancellation_reason',
+                'reschedule_reason',
+            ])
             ->whereBetween('appointment_date', [$start->toDateString(), $end->toDateString()])
             ->get();
 
@@ -98,6 +151,8 @@ class ManagerAnalyticsController extends Controller
         $hourlyActual = [];
         $seenPatients = [];
         $today = Carbon::today();
+        $cancelReasonCounts = [];
+        $rescheduleReasonCounts = [];
 
         foreach ($appointments as $row) {
             $bucket = $this->bucketKey(Carbon::parse($row->appointment_date), $range);
@@ -114,8 +169,16 @@ class ManagerAnalyticsController extends Controller
                 $statusCompleted[$bucket] += 1;
             } elseif ($status === 'cancelled') {
                 $statusCancelled[$bucket] += 1;
+                $reason = trim((string) ($row->cancellation_reason ?? ''));
+                $key = $reason !== '' ? $reason : 'Unspecified';
+                $cancelReasonCounts[$key] = ($cancelReasonCounts[$key] ?? 0) + 1;
             } elseif (in_array($status, ['no_show', 'no-show'], true)) {
                 $statusNoShow[$bucket] += 1;
+            }
+
+            $rescheduleReason = trim((string) ($row->reschedule_reason ?? ''));
+            if ($rescheduleReason !== '') {
+                $rescheduleReasonCounts[$rescheduleReason] = ($rescheduleReasonCounts[$rescheduleReason] ?? 0) + 1;
             }
         }
 
@@ -289,6 +352,36 @@ class ManagerAnalyticsController extends Controller
 
         $patientWalkinTotal = array_sum($walkinByBucket);
         $patientAppointmentTotal = array_sum($appointmentSourceByBucket);
+        $cancelReasonBreakdown = collect($cancelReasonCounts)
+            ->sortDesc()
+            ->map(fn ($value, $name) => ['name' => $name, 'value' => $value])
+            ->values();
+        $rescheduleReasonBreakdown = collect($rescheduleReasonCounts)
+            ->sortDesc()
+            ->map(fn ($value, $name) => ['name' => $name, 'value' => $value])
+            ->values();
+
+        if ($cancelReasonBreakdown->isEmpty()) {
+            $cancelReasonBreakdown = DB::table('appointments')
+                ->selectRaw('cancellation_reason as name, COUNT(*) as value')
+                ->whereNotNull('cancellation_reason')
+                ->whereRaw("TRIM(cancellation_reason) <> ''")
+                ->groupBy('cancellation_reason')
+                ->orderByDesc('value')
+                ->get()
+                ->map(fn ($row) => ['name' => $row->name, 'value' => (int) $row->value]);
+        }
+
+        if ($rescheduleReasonBreakdown->isEmpty()) {
+            $rescheduleReasonBreakdown = DB::table('appointments')
+                ->selectRaw('reschedule_reason as name, COUNT(*) as value')
+                ->whereNotNull('reschedule_reason')
+                ->whereRaw("TRIM(reschedule_reason) <> ''")
+                ->groupBy('reschedule_reason')
+                ->orderByDesc('value')
+                ->get()
+                ->map(fn ($row) => ['name' => $row->name, 'value' => (int) $row->value]);
+        }
 
         return response()->json([
             'range' => $range,
@@ -303,6 +396,10 @@ class ManagerAnalyticsController extends Controller
             ],
             'status' => [
                 'trend' => $statusSeries,
+                'cancel_reason_breakdown' => $cancelReasonBreakdown->values()->all(),
+                'reschedule_reason_breakdown' => $rescheduleReasonBreakdown->values()->all(),
+                'cancel_reason_total' => $cancelReasonBreakdown->sum('value'),
+                'reschedule_reason_total' => $rescheduleReasonBreakdown->sum('value'),
             ],
             'doctor' => [
                 'workload' => $doctorRows,

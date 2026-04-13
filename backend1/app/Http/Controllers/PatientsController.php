@@ -4,14 +4,25 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\patients;
+use App\Models\queue_entries;
+use App\Models\PatientEmailVerification;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\PatientEmailOtpMail;
+use Illuminate\Support\Str;
 
 class PatientsController extends Controller
 {
     public function index()
     {
-        return response()->json(patients::orderBy('created_at', 'desc')->get());
+        $rows = patients::orderBy('created_at', 'desc')->get()->map(function (patients $patient) {
+            $data = $patient->toArray();
+            $data['public_id'] = $patient->public_id ?: $patient->buildPublicId();
+            return $data;
+        })->values();
+
+        return response()->json($rows);
     }
 
     public function checkEmail(Request $request)
@@ -20,10 +31,83 @@ class PatientsController extends Controller
         return response()->json(['exists' => $exists]);
     }
 
+    public function sendEmailVerificationCode(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|string|email',
+        ]);
+
+        $email = strtolower(trim((string) $request->email));
+        if (patients::where('email', $email)->exists()) {
+            return response()->json(['message' => 'This email is already registered.'], 422);
+        }
+
+        $otp = (string) random_int(100000, 999999);
+
+        PatientEmailVerification::updateOrCreate(
+            ['email' => $email],
+            [
+                'code_hash' => Hash::make($otp),
+                'expires_at' => now()->addMinutes(10),
+                'attempts' => 0,
+                'verified_at' => null,
+            ]
+        );
+
+        Mail::to($email)->send(new PatientEmailOtpMail($otp));
+
+        return response()->json(['message' => 'Verification code sent.']);
+    }
+
+    public function verifyEmailVerificationCode(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|string|email',
+            'code' => 'required|digits:6',
+        ]);
+
+        $email = strtolower(trim((string) $request->email));
+        $code = (string) $request->code;
+
+        $row = PatientEmailVerification::where('email', $email)->first();
+        if (!$row) {
+            return response()->json(['message' => 'No verification request found for this email.'], 422);
+        }
+        if ($row->verified_at) {
+            return response()->json(['message' => 'Email is already verified.']);
+        }
+        if ($row->expires_at->isPast()) {
+            return response()->json(['message' => 'Verification code has expired. Please resend code.'], 422);
+        }
+        if ((int) $row->attempts >= 5) {
+            return response()->json(['message' => 'Too many invalid attempts. Please resend code.'], 429);
+        }
+
+        if (!Hash::check($code, $row->code_hash)) {
+            $row->increment('attempts');
+            return response()->json(['message' => 'Invalid verification code.'], 422);
+        }
+
+        $row->verified_at = now();
+        $row->attempts = 0;
+        $row->save();
+
+        $verificationToken = hash('sha256', Str::uuid()->toString() . '|' . $email . '|' . now()->timestamp);
+        cache()->put("patient-email-verified:{$verificationToken}", $email, now()->addMinutes(30));
+
+        return response()->json([
+            'message' => 'Email verified successfully.',
+            'verification_token' => $verificationToken,
+        ]);
+    }
+
     // ── GET /api/patient/profile ──────────────────────────────
     public function profile(Request $request)
     {
-        return response()->json($request->user());
+        $patient = $request->user();
+        $data = $patient->toArray();
+        $data['public_id'] = $patient->public_id ?: $patient->buildPublicId();
+        return response()->json($data);
     }
 
     // ── PUT /api/patient/profile ──────────────────────────────
@@ -40,8 +124,11 @@ class PatientsController extends Controller
                 'date',
                 'before_or_equal:today',
                 function ($attribute, $value, $fail) {
-                    if (Carbon::parse($value)->age < 18) {
+                    $age = Carbon::parse($value)->age;
+                    if ($age < 18) {
                         $fail('Patient must be at least 18 years old.');
+                    } elseif ($age > 100) {
+                        $fail('Patient age cannot be more than 100 years old.');
                     }
                 },
             ],
@@ -50,8 +137,8 @@ class PatientsController extends Controller
             'nationality'            => 'nullable|string',
             'mobile'                 => ['sometimes', 'string', 'regex:/^\+63\d{10}$/'],
             'street'                 => 'sometimes|string',
-            'city'                   => 'sometimes|string',
-            'province'               => 'sometimes|string',
+            'city'                   => ['sometimes', 'string', 'regex:/^[A-Za-z\s]+$/'],
+            'province'               => ['sometimes', 'string', 'regex:/^[A-Za-z\s]+$/'],
             'blood_type'             => 'nullable|string|max:10',
             'allergies'              => 'nullable|string',
             'conditions'             => 'nullable|string',
@@ -66,12 +153,17 @@ class PatientsController extends Controller
             'emergency_name.regex' => 'Numbers are not allowed in emergency contact name.',
             'mobile.regex' => 'Mobile number must be in +63 format followed by 10 digits.',
             'emergency_contact.regex' => 'Emergency contact number must be in +63 format followed by 10 digits.',
+            'city.regex' => 'City must contain letters and spaces only.',
+            'province.regex' => 'Province must contain letters and spaces only.',
         ]);
 
         // Never allow email or password update through this endpoint
         $patient->update($request->except(['email', 'password', 'agree_privacy', 'agree_storage']));
 
-        return response()->json($patient->fresh());
+        $fresh = $patient->fresh();
+        $data = $fresh->toArray();
+        $data['public_id'] = $fresh->public_id ?: $fresh->buildPublicId();
+        return response()->json($data);
     }
 
     // ── PUT /api/patient/password ─────────────────────────────
@@ -109,6 +201,33 @@ class PatientsController extends Controller
         ]);
     }
 
+    // ── GET /api/patients/medical-history ──────────────────────
+    // Limited medical history feed for manager/staff views.
+    // Returns only: patient_id, visit_date, doctor_name.
+    public function medicalHistoryIndex()
+    {
+        $rows = queue_entries::with('doctor')
+            ->where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->orderByDesc('completed_at')
+            ->get()
+            ->map(function (queue_entries $entry) {
+                $doctorName = $entry->doctor
+                    ? trim(($entry->doctor->first_name ?? '') . ' ' . ($entry->doctor->last_name ?? ''))
+                    : null;
+
+                return [
+                    'patient_id' => $entry->patient_id,
+                    'visit_date' => $entry->completed_at?->toISOString()
+                        ?? ($entry->queue_date?->format('Y-m-d') ?: null),
+                    'doctor_name' => $doctorName ?: 'Unassigned',
+                ];
+            })
+            ->values();
+
+        return response()->json($rows);
+    }
+
     // ── POST /api/patients/verify-password ───────────────────
     // Used by the admin UI to gate the View modal behind a password check.
     // Expects { password: string } and checks against the authenticated admin/staff user.
@@ -138,20 +257,23 @@ class PatientsController extends Controller
                 'date',
                 'before_or_equal:today',
                 function ($attribute, $value, $fail) {
-                    if (Carbon::parse($value)->age < 18) {
+                    $age = Carbon::parse($value)->age;
+                    if ($age < 18) {
                         $fail('You must be at least 18 years old to register.');
+                    } elseif ($age > 100) {
+                        $fail('Age cannot be more than 100 years old.');
                     }
                 },
             ],
-            'age'                    => 'required|integer|min:0',
+            'age'                    => 'required|integer|min:18|max:100',
             'gender'                 => 'required|string',
             'civil_status'           => 'nullable|string',
             'nationality'            => 'nullable|string',
             'mobile'                 => ['required', 'string', 'regex:/^\+63\d{10}$/'],
             'email'                  => 'required|string|email|unique:patients,email',
             'street'                 => 'required|string',
-            'city'                   => 'required|string',
-            'province'               => 'required|string',
+            'city'                   => ['required', 'string', 'regex:/^[A-Za-z\s]+$/'],
+            'province'               => ['required', 'string', 'regex:/^[A-Za-z\s]+$/'],
             'password'               => 'required|string|min:8|confirmed',
             'blood_type'             => 'nullable|string|max:10',
             'allergies'              => 'nullable|string',
@@ -162,6 +284,7 @@ class PatientsController extends Controller
             'emergency_contact'      => ['required', 'string', 'regex:/^\+63\d{10}$/'],
             'agree_privacy'          => 'accepted',
             'agree_storage'          => 'accepted',
+            'email_verification_token' => 'required|string',
         ], [
             'first_name.regex' => 'Numbers are not allowed in first name.',
             'middle_name.regex' => 'Numbers are not allowed in middle name.',
@@ -169,7 +292,18 @@ class PatientsController extends Controller
             'emergency_name.regex' => 'Numbers are not allowed in emergency contact name.',
             'mobile.regex' => 'Mobile number must be in +63 format followed by 10 digits.',
             'emergency_contact.regex' => 'Emergency contact number must be in +63 format followed by 10 digits.',
+            'city.regex' => 'City must contain letters and spaces only.',
+            'province.regex' => 'Province must contain letters and spaces only.',
+            'email_verification_token.required' => 'Email verification is required.',
         ]);
+
+        $email = strtolower(trim((string) $request->email));
+        $cachedEmail = cache()->get("patient-email-verified:{$request->email_verification_token}");
+        if (!$cachedEmail || strtolower((string) $cachedEmail) !== $email) {
+            return response()->json([
+                'message' => 'Email verification token is invalid or expired. Please verify your email again.',
+            ], 422);
+        }
 
         $patient = patients::create([
             'first_name'             => $request->first_name,
@@ -179,9 +313,9 @@ class PatientsController extends Controller
             'age'                    => $request->age,
             'gender'                 => $request->gender,
             'civil_status'           => $request->civil_status,
-            'nationality'            => $request->nationality,
+            'nationality'            => null,
             'mobile'                 => $request->mobile,
-            'email'                  => $request->email,
+            'email'                  => $email,
             'street'                 => $request->street,
             'city'                   => $request->city,
             'province'               => $request->province,
@@ -199,6 +333,7 @@ class PatientsController extends Controller
         ]);
 
         $token = $patient->createToken('auth_token')->plainTextToken;
+        cache()->forget("patient-email-verified:{$request->email_verification_token}");
 
         return response()->json([
             'message' => 'Patient registered successfully',

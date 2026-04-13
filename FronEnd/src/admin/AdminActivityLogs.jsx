@@ -34,6 +34,18 @@ const apiFetch = async (path) => {
   return res.json();
 };
 
+const downloadTextFile = (content, fileName, mime = 'text/plain;charset=utf-8;') => {
+  const blob = new Blob([content], { type: mime });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 /* ══════════════ MODULE CONFIG ══════════════ */
 const MODULE_CONFIG = {
   Authentication:    { icon: Shield,        bg: 'bg-blue-50',   color: 'text-blue-600'   },
@@ -335,7 +347,47 @@ export default function ActivityLogs() {
     setStatusFil('All'); setSearch(''); setDateFrom(''); setDateTo(''); setPage(1);
   };
 
-  const handleClearLogs = () => { setLogs([]); setShowClearConfirm(false); };
+  const handleClearLogs = async () => {
+    try {
+      await fetch(`${API_BASE}/admin/system/activity-logs`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || `HTTP ${res.status}`);
+        }
+      });
+      setLogs([]);
+      setShowClearConfirm(false);
+    } catch (err) {
+      alert(err.message || 'Failed to clear logs.');
+    }
+  };
+
+  const handleExportPdf = () => {
+    const printable = filtered.map((l) => `${l.datetime} | ${l.user} | ${l.role} | ${l.module} | ${l.action} | ${l.status}\n${l.desc}`).join('\n\n');
+    const payload = `ClinicSys Activity Logs\nGenerated: ${new Date().toLocaleString('en-PH')}\nRecords: ${filtered.length}\n\n${printable}`;
+    downloadTextFile(payload, `activity-logs-${new Date().toISOString().slice(0, 10)}.pdf`, 'application/pdf');
+  };
+
+  const handleExportExcel = () => {
+    const header = ['ID', 'DateTime', 'User', 'Role', 'Module', 'Action', 'Status', 'Description'];
+    const rows = filtered.map((l) => [
+      l.id,
+      l.datetime,
+      l.user,
+      l.role,
+      l.module,
+      l.action,
+      l.status,
+      String(l.desc || '').replace(/\r?\n/g, ' '),
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    downloadTextFile(csv, `activity-logs-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8;');
+  };
 
   return (
     <MainLayout title="Activity Logs" subtitle="Complete audit trail of all system actions">
@@ -393,10 +445,10 @@ export default function ActivityLogs() {
               <Button size="sm" variant="outline" onClick={() => window.print()}>
                 <Printer className="w-3.5 h-3.5 mr-1.5" /> Print
               </Button>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" onClick={handleExportPdf}>
                 <Download className="w-3.5 h-3.5 mr-1.5" /> PDF
               </Button>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" onClick={handleExportExcel}>
                 <FileText className="w-3.5 h-3.5 mr-1.5" /> Excel
               </Button>
               <Button size="sm" variant="outline" onClick={loadLogs} disabled={loadingLogs}>

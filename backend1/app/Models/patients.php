@@ -29,6 +29,7 @@ protected $fillable = [
 
     // Consent
     'agree_privacy', 'agree_storage',
+    'public_id',
 ];
 
     protected $hidden = [
@@ -41,6 +42,20 @@ protected $fillable = [
         'agree_privacy' => 'boolean',
         'agree_storage' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::created(function (self $patient) {
+            if ($patient->public_id) return;
+            $patient->forceFill(['public_id' => $patient->buildPublicId()])->saveQuietly();
+        });
+    }
+
+    public function buildPublicId(): string
+    {
+        $base = $this->created_at ? \Carbon\Carbon::parse($this->created_at) : now();
+        return sprintf('PAT-%s-%06d', $base->format('YmdHi'), (int) $this->id);
+    }
 
     /**
      * Full name accessor

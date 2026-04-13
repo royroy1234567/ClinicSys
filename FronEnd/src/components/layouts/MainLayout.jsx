@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import Sidebar from './Sidebar';
-import DashboardHeader from './DashboardHeader';
+import DashboardHeader from './NavBar';
 
 const SIDEBAR_KEY = 'clinicsys_sidebar_collapsed';
 const EXPANDED_W  = 256;

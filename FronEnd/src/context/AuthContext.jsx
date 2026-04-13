@@ -68,7 +68,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('auth_token');
   };
 
-  const login = async (email, password) => {
+  const login = async (email, password, otpContext = null) => {
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
@@ -77,10 +77,24 @@ export const AuthProvider = ({ children }) => {
           'Content-Type': 'application/json',
           Accept:         'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          ...(otpContext?.otpCode ? { otp_code: otpContext.otpCode } : {}),
+          ...(otpContext?.otpToken ? { otp_token: otpContext.otpToken } : {}),
+        }),
       });
 
       const data = await res.json();
+
+      if (res.status === 202 && data?.requires_otp) {
+        return {
+          success: false,
+          requiresOtp: true,
+          otpToken: data.otp_token,
+          message: data.message ?? 'Email verification code required.',
+        };
+      }
 
       if (res.ok && data.success) {
         setUser(data.user);

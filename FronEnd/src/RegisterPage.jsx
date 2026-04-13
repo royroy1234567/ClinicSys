@@ -23,6 +23,22 @@ const getTodayISO = () => {
   return `${today.getFullYear()}-${month}-${day}`;
 };
 
+const getMinDobISO = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 100);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+};
+
+const getMaxDobISO = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+};
+
 const pwStrength = (pw) => {
   if (!pw) return { score: 0, label: '', color: '' };
   let score = 0;
@@ -50,7 +66,7 @@ const STEPS = [
 
 const INIT = {
   firstName: '', middleName: '', lastName: '',
-  dob: '', age: '', gender: '', civilStatus: '', nationality: '',
+  dob: '', age: '', gender: '', civilStatus: '',
   mobile: '', email: '',
   street: '', city: '', province: '',
   password: '', confirmPassword: '',
@@ -112,6 +128,28 @@ const apiCheckEmail = async (email) => {
   });
   const data = await response.json();
   return data.exists;
+};
+
+const apiSendVerificationCode = async (email) => {
+  const response = await fetch(`${API_BASE}/api/patients/send-verification-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to send verification code');
+  return data;
+};
+
+const apiVerifyVerificationCode = async ({ email, code }) => {
+  const response = await fetch(`${API_BASE}/api/patients/verify-verification-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to verify code');
+  return data;
 };
 
 /* ─── Reusable field components ─── */
@@ -195,12 +233,33 @@ const grid3 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16p
 /* ─── Email Verification Modal ─── */
 function EmailVerificationModal({ email, onVerified, onClose }) {
   const [code, setCode] = useState(['', '', '', '', '', '']);
-  const [sent, setSent] = useState(true);
+  const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resendTimer, setResendTimer] = useState(30);
   const [verified, setVerified] = useState(false);
   const inputs = useRef([]);
+
+  useEffect(() => {
+    let mounted = true;
+    const send = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        await apiSendVerificationCode(email);
+        if (!mounted) return;
+        setSent(true);
+        setResendTimer(30);
+      } catch (err) {
+        if (!mounted) return;
+        setError(err.message || 'Failed to send verification code.');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    send();
+    return () => { mounted = false; };
+  }, [email]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -234,22 +293,34 @@ function EmailVerificationModal({ email, onVerified, onClose }) {
     }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     const full = code.join('');
     if (full.length < 6) { setError('Please enter the complete 6-digit code.'); return; }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const result = await apiVerifyVerificationCode({ email, code: full });
       setLoading(false);
       setVerified(true);
-      setTimeout(() => onVerified(), 1200);
-    }, 1000);
+      setTimeout(() => onVerified(result.verification_token), 800);
+    } catch (err) {
+      setLoading(false);
+      setError(err.message || 'Verification failed.');
+    }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     setCode(['', '', '', '', '', '']);
     setError('');
-    setSent(s => !s);
-    setResendTimer(30);
+    setLoading(true);
+    try {
+      await apiSendVerificationCode(email);
+      setSent(s => !s);
+      setResendTimer(30);
+    } catch (err) {
+      setError(err.message || 'Failed to resend code.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -489,7 +560,8 @@ function StepAccount({ form, set, errors, showPw, setShowPw, showCpw, setShowCpw
 
 /* ─── Step 2: Personal Info ─── */
 function StepPersonal({ form, set, errors }) {
-  const todayISO = getTodayISO();
+  const minDobISO = getMinDobISO();
+  const maxDobISO = getMaxDobISO();
 
   return (
     <>
@@ -503,13 +575,13 @@ function StepPersonal({ form, set, errors }) {
           <Field label="Last Name" id="lastName" value={form.lastName} onChange={v => set('lastName', v)} error={errors.lastName} required placeholder="dela Cruz" />
         </div>
         <div style={grid3}>
-          <Field label="Date of Birth" id="dob" type="date" value={form.dob} onChange={v => set('dob', v)} error={errors.dob} required inputProps={{ max: todayISO }} />
+          <Field label="Date of Birth" id="dob" type="date" value={form.dob} onChange={v => set('dob', v)} error={errors.dob} required inputProps={{ min: minDobISO, max: maxDobISO }} />
           <Field label="Age" id="age" value={form.age} readOnly hint="Auto-calculated" extraStyle={{ color: '#6B7280', background: '#F3F4F6', cursor: 'default' }} />
           <FieldSelect label="Gender" id="gender" value={form.gender} onChange={v => set('gender', v)} error={errors.gender} required options={['Male', 'Female']} />
         </div>
         <div style={grid2}>
           <FieldSelect label="Civil Status" id="civilStatus" value={form.civilStatus} onChange={v => set('civilStatus', v)} options={['Single', 'Married', 'Widowed', 'Separated', 'Divorced']} placeholder="Select (optional)" />
-          <Field label="Nationality" id="nationality" value={form.nationality} onChange={v => set('nationality', v)} placeholder="Filipino (optional)" />
+          <div />
         </div>
       </div>
 
@@ -517,7 +589,7 @@ function StepPersonal({ form, set, errors }) {
         <p style={{ fontSize: '0.76rem', fontWeight: 700, color: '#2563EB', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
           <span>📍</span> Contact & Address
         </p>
-        <Field label="Mobile Number" id="mobile" type="tel" value={form.mobile} onChange={v => set('mobile', v)} error={errors.mobile} required placeholder="+63 912 345 6789" />
+        <Field label="Mobile Number" id="mobile" type="tel" value={form.mobile} onChange={v => set('mobile', v)} error={errors.mobile} required placeholder="+63 912 345 6789" inputProps={{ inputMode: 'numeric' }} />
         <Field label="Street / Barangay" id="street" value={form.street} onChange={v => set('street', v)} error={errors.street} required placeholder="123 Rizal St., Brgy. Santo Nino" />
         <div style={grid2}>
           <Field label="City / Municipality" id="city" value={form.city} onChange={v => set('city', v)} error={errors.city} required placeholder="Quezon City" />
@@ -564,7 +636,7 @@ function StepEmergency({ form, set, errors }) {
       <div style={grid2}>
         <FieldSelect label="Relationship" id="emergencyRelationship" value={form.emergencyRelationship} onChange={v => set('emergencyRelationship', v)} error={errors.emergencyRelationship} required
           options={['Parent','Spouse','Sibling','Child','Relative','Friend','Guardian','Other']} />
-        <Field label="Contact Number" id="emergencyContact" type="tel" value={form.emergencyContact} onChange={v => set('emergencyContact', v)} error={errors.emergencyContact} required placeholder="+63 912 345 6789" />
+        <Field label="Contact Number" id="emergencyContact" type="tel" value={form.emergencyContact} onChange={v => set('emergencyContact', v)} error={errors.emergencyContact} required placeholder="+63 912 345 6789" inputProps={{ inputMode: 'numeric' }} />
       </div>
     </>
   );
@@ -635,6 +707,7 @@ export default function RegisterPage() {
   const [apiError,      setApiError]      = useState('');
   const [showVerify,    setShowVerify]    = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [emailVerificationToken, setEmailVerificationToken] = useState('');
   const [emailTaken,    setEmailTaken]    = useState(false);
   const navigate = useNavigate();
 
@@ -680,12 +753,16 @@ export default function RegisterPage() {
     if ((k === 'mobile' || k === 'emergencyContact') && typeof nextValue === 'string') {
       nextValue = normalizeMobileInput(nextValue);
     }
+    if ((k === 'city' || k === 'province') && typeof nextValue === 'string') {
+      nextValue = nextValue.replace(/[^A-Za-z\s]/g, '');
+    }
 
     setForm(f => ({ ...f, [k]: nextValue }));
     setErrors(e => ({ ...e, [k]: '' }));
     setApiError('');
     if (k === 'email') {
       setEmailVerified(false);
+      setEmailVerificationToken('');
       setEmailTaken(false);
     }
     if (nextValue !== v) {
@@ -729,6 +806,8 @@ export default function RegisterPage() {
           e.dob = 'Future date is not allowed';
         } else if (calcAge(form.dob) < 18) {
           e.dob = 'You must be at least 18 years old to register';
+        } else if (calcAge(form.dob) > 100) {
+          e.dob = 'Maximum allowed age is 100 years old';
         }
       }
 
@@ -737,7 +816,9 @@ export default function RegisterPage() {
       else if (!/^\+63\d{10}$/.test(form.mobile)) e.mobile = 'Mobile must be +63 followed by 10 digits';
       if (!form.street.trim())    e.street    = 'Street is required';
       if (!form.city.trim())      e.city      = 'City is required';
+      else if (!/^[A-Za-z\s]+$/.test(form.city.trim())) e.city = 'City must contain letters and spaces only';
       if (!form.province.trim())  e.province  = 'Province is required';
+      else if (!/^[A-Za-z\s]+$/.test(form.province.trim())) e.province = 'Province must contain letters and spaces only';
     }
     if (step === 4) {
       if (!form.emergencyName.trim())         e.emergencyName         = 'Name is required';
@@ -759,7 +840,7 @@ export default function RegisterPage() {
     const map = {
       first_name: 'firstName', middle_name: 'middleName', last_name: 'lastName',
       dob: 'dob', age: 'age', gender: 'gender', civil_status: 'civilStatus',
-      nationality: 'nationality', mobile: 'mobile', email: 'email',
+      mobile: 'mobile', email: 'email',
       street: 'street', city: 'city', province: 'province',
       password: 'password', blood_type: 'bloodType',
       allergies: 'allergies', conditions: 'conditions', medications: 'medications',
@@ -814,7 +895,6 @@ export default function RegisterPage() {
       age:                    parseInt(form.age) || 0,
       gender:                 form.gender,
       civil_status:           form.civilStatus  || null,
-      nationality:            form.nationality  || null,
       mobile:                 form.mobile,
       email:                  form.email,
       google_id:              null,
@@ -832,6 +912,7 @@ export default function RegisterPage() {
       emergency_contact:      form.emergencyContact,
       agree_privacy:          form.agreePrivacy,
       agree_storage:          form.agreeStorage,
+      email_verification_token: emailVerificationToken,
     };
 
     try {
@@ -848,7 +929,7 @@ export default function RegisterPage() {
         setErrors(mapped);
         const stepFields = [
           ['email','password','confirmPassword'],
-          ['firstName','lastName','dob','gender','civilStatus','nationality','mobile','street','city','province'],
+          ['firstName','lastName','dob','gender','civilStatus','mobile','street','city','province'],
           ['bloodType','allergies','conditions','medications'],
           ['emergencyName','emergencyRelationship','emergencyContact'],
           ['agreePrivacy','agreeStorage'],
@@ -1030,8 +1111,9 @@ export default function RegisterPage() {
       {showVerify && (
         <EmailVerificationModal
           email={form.email}
-          onVerified={() => {
+          onVerified={(verificationToken) => {
             setEmailVerified(true);
+            setEmailVerificationToken(verificationToken || '');
             setShowVerify(false);
             setAnimDir('forward');
             setStep(s => Math.min(s + 1, STEPS.length));

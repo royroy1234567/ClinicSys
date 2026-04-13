@@ -6,8 +6,13 @@ use App\Models\Appointment;
 use App\Models\DoctorSchedule;
 use App\Models\ScheduleSlot;
 use App\Models\queue_entries;
+use App\Models\clinic_users;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\AppointmentBookedPatientMail;
+use App\Mail\AppointmentCancelledPatientMail;
+use App\Mail\AppointmentRescheduledPatientMail;
 
 class AppointmentController extends Controller
 {
@@ -17,19 +22,37 @@ class AppointmentController extends Controller
      */
     public function store(Request $request)
     {
+        $role = strtolower((string) ($request->user()->role ?? 'patient'));
+        if ($role !== 'patient') {
+            return response()->json([
+                'message' => 'Only patients can book appointments.',
+            ], 403);
+        }
+
         $request->validate([
             'doctor_id'        => 'required|integer|exists:clinic_users,user_id',
             'service_id'       => 'nullable|integer|exists:services,service_id',
-            'appointment_date' => 'required|date_format:Y-m-d|after:today',
+            'appointment_date' => 'required|date_format:Y-m-d|after_or_equal:today',
             'appointment_time' => 'required|date_format:H:i',
             'reason'           => 'required|string|max:500',
             'notes'            => 'nullable|string|max:1000',
         ]);
 
-        $patientId = $request->user()->id;
+        $patientId = $request->user()->id ?? $request->user()->user_id;
         $date      = $request->appointment_date;
         $time      = $request->appointment_time;
         $doctorId  = $request->doctor_id;
+
+        $doctor = clinic_users::find($doctorId);
+        if (!$doctor) {
+            return response()->json(['message' => 'Selected doctor was not found.'], 422);
+        }
+        if (strtolower((string) ($doctor->status ?? 'inactive')) !== 'active') {
+            return response()->json(['message' => 'Selected doctor is not active.'], 422);
+        }
+        if (strtolower((string) ($doctor->availability_status ?? 'unavailable')) !== 'available') {
+            return response()->json(['message' => 'Selected doctor is not available.'], 422);
+        }
 
         $hasActiveAppointment = Appointment::where('patient_id', $patientId)
             ->where('status', 'scheduled')
@@ -101,9 +124,19 @@ class AppointmentController extends Controller
             return $apt;
         });
 
+        try {
+            $appointment->load(['patient', 'doctor', 'service']);
+            if (!empty($appointment->patient?->email)) {
+                Mail::to($appointment->patient->email)->send(new AppointmentBookedPatientMail($appointment));
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'message'        => 'Appointment booked successfully.',
             'appointment_id' => $appointment->appointment_id,
+            'appointment_number' => $appointment->appointment_number ?: $appointment->buildAppointmentNumber(),
             'status'         => 'scheduled',
         ], 201);
     }
@@ -142,7 +175,7 @@ class AppointmentController extends Controller
     }
 
     $user = $request->user();
-    $isStaff = in_array($user->role, ['Admin', 'Staff', 'Doctor']); // adjust roles to match yours
+    $isStaff = in_array($user->role, ['Admin', 'Staff', 'Doctor', 'Manager', 'manager']); // adjust roles to match yours
 
     $query = Appointment::with(['doctor', 'service', 'patient']);
 
@@ -152,13 +185,23 @@ class AppointmentController extends Controller
               ->orderByDesc('appointment_time');
     } else {
         // Patient — fetch only their own
-        $query->where('patient_id', $user->id)
+        $query->where('patient_id', $user->id ?? $user->user_id)
               ->orderByDesc('appointment_date')
               ->orderByDesc('appointment_time');
     }
 
-    $appointments = $query->get()->map(fn($a) => [
+    $appointmentRows = $query->get();
+    $appointmentIds = $appointmentRows->pluck('appointment_id')->filter()->values();
+    $queueByAppointmentId = queue_entries::whereIn('appointment_id', $appointmentIds)
+        ->get()
+        ->keyBy('appointment_id');
+
+    $appointments = $appointmentRows->map(function ($a) use ($queueByAppointmentId) {
+        $queueEntry = $queueByAppointmentId->get($a->appointment_id);
+
+        return [
         'appointment_id'   => $a->appointment_id,
+        'appointment_number' => $a->appointment_number ?: $a->buildAppointmentNumber(),
         'patient_name'     => $a->patient
             ? trim(($a->patient->first_name ?? '') . ' ' . ($a->patient->last_name ?? ''))
             : '—',
@@ -173,8 +216,13 @@ class AppointmentController extends Controller
         'reason'           => $a->reason,
         'notes'            => $a->notes,
         'status'           => $a->status,
-        'queue_number'     => $a->queue_number ?? null,
-    ]);
+        'queue_number'     => $queueEntry?->queue_number ?? null,
+        'queue_entry_id'   => $queueEntry?->queue_entry_id ?? null,
+        'queue_reference_number' => $queueEntry?->queue_reference_number ?: ($queueEntry?->buildQueueReferenceNumber()),
+        'cancellation_reason' => $a->cancellation_reason,
+        'reschedule_reason' => $a->reschedule_reason,
+    ];
+    });
 
     return response()->json($appointments);
 }
@@ -185,16 +233,30 @@ class AppointmentController extends Controller
      */
     public function destroy(Request $request, $id)
     {
+        $role = strtolower((string) ($request->user()->role ?? 'patient'));
+        if ($role !== 'patient') {
+            return response()->json(['message' => 'Only patients can cancel appointments.'], 403);
+        }
+
+        $request->validate([
+            'cancellation_reason' => 'required|string|max:255',
+        ]);
+
+        $patientId = $request->user()->id ?? $request->user()->user_id;
         $appointment = Appointment::where('appointment_id', $id)
-            ->where('patient_id', $request->user()->id)
+            ->where('patient_id', $patientId)
             ->firstOrFail();
 
         if ($appointment->status !== 'scheduled') {
             return response()->json(['message' => 'Only scheduled appointments can be cancelled.'], 422);
         }
 
-        DB::transaction(function () use ($appointment) {
-            $appointment->update(['status' => 'cancelled']);
+        $cancelReason = $request->input('cancellation_reason');
+        DB::transaction(function () use ($appointment, $cancelReason) {
+            $appointment->update([
+                'status' => 'cancelled',
+                'cancellation_reason' => $cancelReason,
+            ]);
 
             // Find and decrement the slot booked count
             $schedule = DoctorSchedule::where('user_id', $appointment->doctor_id)
@@ -213,7 +275,127 @@ class AppointmentController extends Controller
             }
         });
 
+        try {
+            $appointment->load(['patient', 'doctor', 'service']);
+            if (!empty($appointment->patient?->email)) {
+                Mail::to($appointment->patient->email)->send(new AppointmentCancelledPatientMail($appointment));
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json(['message' => 'Appointment cancelled.']);
+    }
+
+    /**
+     * PATCH /api/appointments/{id}/reschedule
+     * Reschedule an appointment (patient only, if still scheduled).
+     */
+    public function reschedule(Request $request, $id)
+    {
+        $role = strtolower((string) ($request->user()->role ?? 'patient'));
+        if ($role !== 'patient') {
+            return response()->json(['message' => 'Only patients can reschedule appointments.'], 403);
+        }
+
+        $request->validate([
+            'doctor_id' => 'required|integer|exists:clinic_users,user_id',
+            'appointment_date' => 'required|date_format:Y-m-d|after_or_equal:today',
+            'appointment_time' => 'required|date_format:H:i',
+            'reschedule_reason' => 'required|string|max:255',
+        ]);
+
+        $patientId = $request->user()->id ?? $request->user()->user_id;
+        $appointment = Appointment::where('appointment_id', $id)
+            ->where('patient_id', $patientId)
+            ->firstOrFail();
+
+        if ($appointment->status !== 'scheduled') {
+            return response()->json(['message' => 'Only scheduled appointments can be rescheduled.'], 422);
+        }
+
+        $date = $request->appointment_date;
+        $time = $request->appointment_time;
+        $doctorId = (int) $request->doctor_id;
+
+        $doctor = clinic_users::find($doctorId);
+        if (!$doctor) {
+            return response()->json(['message' => 'Assigned doctor was not found.'], 422);
+        }
+        if (strtolower((string) ($doctor->status ?? 'inactive')) !== 'active') {
+            return response()->json(['message' => 'Assigned doctor is not active.'], 422);
+        }
+        if (strtolower((string) ($doctor->availability_status ?? 'unavailable')) !== 'available') {
+            return response()->json(['message' => 'Assigned doctor is not available for rescheduling.'], 422);
+        }
+
+        $schedule = DoctorSchedule::where('user_id', $doctorId)
+            ->where('schedule_date', $date)
+            ->first();
+        if (!$schedule) {
+            return response()->json(['message' => 'No schedule found for this doctor on the selected date.'], 422);
+        }
+
+        $slot = ScheduleSlot::where('schedule_id', $schedule->schedule_id)
+            ->whereRaw("TIME(?) >= start_time AND TIME(?) < end_time", [$time, $time])
+            ->first();
+        if (!$slot) {
+            return response()->json(['message' => 'Selected time is not within any available slot.'], 422);
+        }
+
+        $alreadyBooked = Appointment::where('doctor_id', $doctorId)
+            ->where('appointment_date', $date)
+            ->where('appointment_time', $time . ':00')
+            ->whereNotIn('status', ['cancelled'])
+            ->where('appointment_id', '!=', $appointment->appointment_id)
+            ->count();
+        if ($alreadyBooked > 0) {
+            return response()->json(['message' => 'This time slot is already taken.'], 422);
+        }
+
+        DB::transaction(function () use ($appointment, $request, $doctorId, $date, $time) {
+            $oldSchedule = DoctorSchedule::where('user_id', $appointment->doctor_id)
+                ->where('schedule_date', $appointment->appointment_date)
+                ->first();
+            if ($oldSchedule) {
+                $oldSlot = ScheduleSlot::where('schedule_id', $oldSchedule->schedule_id)
+                    ->whereRaw("TIME(?) >= start_time AND TIME(?) < end_time", [$appointment->appointment_time, $appointment->appointment_time])
+                    ->first();
+                if ($oldSlot && $oldSlot->booked > 0) {
+                    $oldSlot->decrement('booked');
+                }
+            }
+
+            $newSchedule = DoctorSchedule::where('user_id', $doctorId)
+                ->where('schedule_date', $date)
+                ->first();
+            if ($newSchedule) {
+                $newSlot = ScheduleSlot::where('schedule_id', $newSchedule->schedule_id)
+                    ->whereRaw("TIME(?) >= start_time AND TIME(?) < end_time", [$time, $time])
+                    ->first();
+                if ($newSlot) {
+                    $newSlot->increment('booked');
+                }
+            }
+
+            $appointment->update([
+                'doctor_id' => $doctorId,
+                'appointment_date' => $date,
+                'appointment_time' => $time,
+                'reschedule_reason' => $request->reschedule_reason,
+            ]);
+        });
+
+        try {
+            $appointment->refresh()->load(['patient', 'doctor', 'service']);
+            if (!empty($appointment->patient?->email)) {
+                Mail::to($appointment->patient->email)->send(new AppointmentRescheduledPatientMail($appointment));
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json(['message' => 'Appointment rescheduled successfully.']);
     }
 
     private static function toMins(string $time): int

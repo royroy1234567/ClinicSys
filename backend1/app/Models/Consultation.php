@@ -14,6 +14,7 @@ class Consultation extends Model
         'queue_entry_id',
         'patient_id',
         'doctor_id',
+        'consultation_number',
         'chief_complaint',
         'blood_pressure',
         'temperature',
@@ -29,6 +30,8 @@ class Consultation extends Model
         'session_rating',
         'session_feedback',
         'session_rated_at',
+        'feedback_response_status',
+        'feedback_responded_at',
         'status',
         'session_started_at',
         'completed_at',
@@ -42,6 +45,7 @@ class Consultation extends Model
         'follow_up_date' => 'date:Y-m-d',
         'session_rating' => 'integer',
         'session_rated_at' => 'datetime',
+        'feedback_responded_at' => 'datetime',
         'session_started_at' => 'datetime',
         'completed_at' => 'datetime',
         'finalized_at' => 'datetime',
@@ -60,5 +64,24 @@ class Consultation extends Model
     public function doctor(): BelongsTo
     {
         return $this->belongsTo(clinic_users::class, 'doctor_id', 'user_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (self $consultation) {
+            if ($consultation->consultation_number) return;
+            $consultation->forceFill(['consultation_number' => $consultation->buildConsultationNumber()])->saveQuietly();
+        });
+    }
+
+    public function buildConsultationNumber(): string
+    {
+        $base = $this->finalized_at
+            ?? $this->completed_at
+            ?? $this->updated_at
+            ?? $this->created_at
+            ?? now();
+
+        return sprintf('CON-%s-%06d', \Carbon\Carbon::parse($base)->format('YmdHi'), (int) $this->consultation_id);
     }
 }

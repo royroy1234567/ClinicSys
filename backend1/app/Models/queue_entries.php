@@ -16,6 +16,7 @@ class queue_entries extends Model
         'patient_id',
         'doctor_id',
         'service_id',
+        'queue_reference_number',
         'queue_date',
         'queue_number',
         'source',
@@ -52,5 +53,21 @@ class queue_entries extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Servics::class, 'service_id', 'service_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (self $entry) {
+            if ($entry->queue_reference_number) return;
+            $entry->forceFill(['queue_reference_number' => $entry->buildQueueReferenceNumber()])->saveQuietly();
+        });
+    }
+
+    public function buildQueueReferenceNumber(): string
+    {
+        $baseDate = $this->queue_date ? \Carbon\Carbon::parse($this->queue_date) : now();
+        $timePart = $this->arrival_time ? str_replace(':', '', substr((string) $this->arrival_time, 0, 5)) : '0000';
+        $dailySeq = str_pad((string) ($this->queue_number ?? 0), 4, '0', STR_PAD_LEFT);
+        return sprintf('QUE-%s%s-%s', $baseDate->format('Ymd'), $timePart, $dailySeq);
     }
 }

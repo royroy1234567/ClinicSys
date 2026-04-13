@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MainLayout from '../components/layouts/MainLayout';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { useNavigate } from 'react-router-dom';
 import LogoutConfirmModal from '../components/common/LogoutConfirmModal';
 import {
@@ -18,6 +19,16 @@ const authHeaders = () => ({
   'Accept':        'application/json',
   'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
 });
+
+const normalizeMobileInput = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  let core = digits;
+  if (core.startsWith('63')) core = core.slice(2);
+  if (core.startsWith('0')) core = core.slice(1);
+  core = core.slice(0, 10);
+  return core ? `+63${core}` : '';
+};
 
 /* ══════════════════════════════════════════════════
    TOAST
@@ -117,7 +128,10 @@ function Field({ icon: Icon, label, value, editable, onChange, type = 'text', no
 function ProfileModal({ profile, onSave, onClose, saving }) {
   const [edit, setEdit]   = useState(false);
   const [draft, setDraft] = useState(profile);
-  const f = k => v => setDraft(p => ({ ...p, [k]: v }));
+  const f = k => v => setDraft((p) => {
+    if (k === 'mobile') return { ...p, [k]: normalizeMobileInput(v) };
+    return { ...p, [k]: v };
+  });
 
   return (
     <Modal onClose={onClose} icon={User} iconBg="bg-gradient-to-r from-blue-600 to-indigo-700"
@@ -168,7 +182,10 @@ function ProfileModal({ profile, onSave, onClose, saving }) {
 function MedicalModal({ medical, onSave, onClose, saving }) {
   const [edit, setEdit]   = useState(false);
   const [draft, setDraft] = useState(medical);
-  const f = k => v => setDraft(p => ({ ...p, [k]: v }));
+  const f = k => v => setDraft((p) => {
+    if (k === 'emergency_contact') return { ...p, [k]: normalizeMobileInput(v) };
+    return { ...p, [k]: v };
+  });
 
   return (
     <Modal onClose={onClose} icon={Heart} iconBg="bg-gradient-to-r from-rose-500 to-pink-600"
@@ -398,18 +415,30 @@ function SettingItem({ icon: Icon, iconBg, label, desc, badge, onClick, danger }
 ══════════════════════════════════════════════════ */
 export default function PatientSettingsPage() {
   const { user, logout }  = useAuth();
+  const {
+    preferences,
+    setNotificationPreference,
+    validateNotificationPreference,
+  } = useNotifications();
   const navigate          = useNavigate();
 
   const [patient,  setPatient]  = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
-  const [notif,    setNotif]    = useState({ confirmation: true, reminder: true, updates: true, promo: false });
   const [privacy,  setPrivacy]  = useState({ allowDoctorAccess: true, shareForTreatment: true, anonymousData: false });
   const [modal,    setModal]    = useState(null);
   const [toast,    setToast]    = useState(null);
 
   const showToast = (msg, type = 'success') => setToast({ message: msg, type });
   const close     = () => setModal(null);
+
+  const notif = {
+    confirmation: true,
+    reminder: true,
+    updates: true,
+    promo: false,
+    ...(preferences || {}),
+  };
 
   // ── Fetch patient on mount ──
   useEffect(() => {
@@ -441,6 +470,10 @@ export default function PatientSettingsPage() {
 
   // ── Save profile ──
   const saveProfile = async (draft) => {
+    if (draft.mobile && !/^\+63\d{10}$/.test(draft.mobile)) {
+      showToast('Mobile must be +63 followed by 10 digits.', 'error');
+      throw new Error('Invalid mobile format');
+    }
     setSaving(true);
     try {
       const res = await fetch(`${API_BASE}/patient/profile`, {
@@ -462,6 +495,10 @@ export default function PatientSettingsPage() {
 
   // ── Save medical ──
   const saveMedical = async (draft) => {
+    if (draft.emergency_contact && !/^\+63\d{10}$/.test(draft.emergency_contact)) {
+      showToast('Emergency contact must be +63 followed by 10 digits.', 'error');
+      throw new Error('Invalid emergency contact format');
+    }
     setSaving(true);
     try {
       const res = await fetch(`${API_BASE}/patient/profile`, {
@@ -617,7 +654,19 @@ export default function PatientSettingsPage() {
       {modal === 'notif' && (
         <NotifModal
           notif={notif}
-          onChange={(k, v) => { setNotif(p => ({ ...p, [k]: v })); showToast(`Notification ${v ? 'enabled' : 'disabled'}.`); }}
+          onChange={(k, v) => {
+            const check = validateNotificationPreference(k, v);
+            if (!check?.ok) {
+              showToast(check?.reason || 'Invalid notification setting.', 'error');
+              return;
+            }
+            const result = setNotificationPreference(k, v);
+            if (!result?.ok) {
+              showToast(result?.reason || 'Unable to save notification setting.', 'error');
+              return;
+            }
+            showToast(`Notification ${v ? 'enabled' : 'disabled'}.`);
+          }}
           onClose={close}
         />
       )}

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\ConsultationFeedbackResponseMail;
 use App\Models\Consultation;
 use App\Models\Transaction;
 use App\Models\queue_entries;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Mail;
 
 class ConsultationController extends Controller
 {
@@ -166,15 +168,51 @@ class ConsultationController extends Controller
         $consultation->session_rating = (int) $request->input('session_rating');
         $consultation->session_feedback = $request->input('session_feedback');
         $consultation->session_rated_at = now();
+        $consultation->feedback_response_status = 'pending';
+        $consultation->feedback_responded_at = null;
         $consultation->save();
 
         return response()->json($this->formatConsultation($consultation->fresh(), true));
+    }
+
+    public function respondToFeedback(Request $request, $consultationId)
+    {
+        $role = strtolower((string) ($request->user()->role ?? ''));
+        if ($role !== 'manager') {
+            return response()->json(['message' => 'Only managers can send feedback responses.'], 403);
+        }
+
+        $request->validate([
+            'message' => 'required|string|min:5|max:3000',
+        ]);
+
+        $consultation = Consultation::with(['patient', 'doctor'])->findOrFail($consultationId);
+        $patient = $consultation->patient;
+
+        if (!$patient || empty($patient->email)) {
+            return response()->json(['message' => 'Patient email is not available for this consultation.'], 422);
+        }
+
+        $managerName = trim((string) ($request->user()->name ?? 'Manager'));
+
+        Mail::to($patient->email)->send(new ConsultationFeedbackResponseMail(
+            consultation: $consultation,
+            responseMessage: (string) $request->input('message'),
+            responderName: $managerName
+        ));
+
+        $consultation->feedback_response_status = 'responded';
+        $consultation->feedback_responded_at = now();
+        $consultation->save();
+
+        return response()->json(['message' => 'Response sent to patient email.']);
     }
 
     private function formatConsultation(Consultation $c, bool $withRelations = false): array
     {
         $payload = [
             'consultation_id' => $c->consultation_id,
+            'consultation_number' => $c->consultation_number ?: $c->buildConsultationNumber(),
             'queue_entry_id' => $c->queue_entry_id,
             'patient_id' => $c->patient_id,
             'doctor_id' => $c->doctor_id,
@@ -194,6 +232,8 @@ class ConsultationController extends Controller
             'session_feedback' => $c->session_feedback,
             'session_rated_at' => $c->session_rated_at?->toISOString(),
             'rating_status' => $c->session_rating ? 'rated' : 'not_yet_rated',
+            'feedback_response_status' => $c->feedback_response_status ?: 'pending',
+            'feedback_responded_at' => $c->feedback_responded_at?->toISOString(),
             'status' => $c->status,
             'session_started_at' => $c->session_started_at?->toISOString(),
             'completed_at' => $c->completed_at?->toISOString(),

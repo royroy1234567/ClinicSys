@@ -10,6 +10,7 @@ import {
   Stethoscope,
   ClipboardList,
   Activity,
+  MessageSquare,
   Settings,
   LogOut,
   ChevronRight,
@@ -46,6 +47,8 @@ const MENU_ITEMS = {
     { type: 'divider', label: 'Operations' },
     { icon: ClipboardList, label: 'Services',         path: '/services'        },
     { icon: Calendar,      label: 'Appointments',     path: '/appointments'    },
+    { icon: MessageSquare, label: 'Feed',             path: '/feed'            },
+    { icon: Settings,      label: 'Settings',         path: '/manager-settings' },
   ],
 
   admin: [
@@ -67,6 +70,7 @@ const MENU_ITEMS = {
     { icon: ClipboardList, label: 'Queue',            path: '/queue'              },
     { type: 'divider', label: 'Reference' },
     { icon: Stethoscope,   label: 'Doctors',          path: '/staff-doctors'      },
+    { icon: UserPlus,      label: 'Patients',         path: '/staff-patients'     },
     { icon: Settings,      label: 'Settings',          path: '/staff-settings'     },
   ],
 

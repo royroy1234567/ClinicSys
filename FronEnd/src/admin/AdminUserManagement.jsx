@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import {
-  Plus, Edit, Trash2, Search, ChevronDown, Eye, EyeOff,
+  Edit, Trash2, Search, ChevronDown, Eye, EyeOff,
   Shield, Stethoscope, Users, UserCheck, UserX, KeyRound,
-  X, Check, AlertTriangle, RefreshCw,
+  X, Check, AlertTriangle,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Loader2, Briefcase, Settings, Lock, ArchiveX, ToggleLeft,
   UserCog, Archive,
@@ -44,6 +44,20 @@ const apiFetch = async (path, options = {}) => {
 };
 
 const getRawId = (user) => user?.user_id ?? user?.raw_id ?? user?.id;
+const getPublicId = (user) => user?.public_id || '—';
+const NAME_RE = /^[A-Za-z\s]+$/;
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const MOBILE_RE = /^\+63\d{10}$/;
+const sanitizeName = (value) => String(value ?? '').replace(/[^A-Za-z\s]/g, '');
+const normalizeMobileInput = (value) => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  let core = digits;
+  if (core.startsWith('63')) core = core.slice(2);
+  if (core.startsWith('0')) core = core.slice(1);
+  core = core.slice(0, 10);
+  return core ? `+63${core}` : '';
+};
 
 /* ══════════════ SMALL COMPONENTS ══════════════ */
 const RoleBadge = ({ role }) => {
@@ -88,18 +102,16 @@ const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm tex
 
 /* ══════════════ KPI CARD ══════════════ */
 const KPICard = ({ label, value, icon: Icon, iconBg, iconColor, loading }) => (
-  <Card>
+  <Card className="py-0 gap-0 rounded-2xl border-gray-200 bg-white shadow-sm">
     <CardContent className="p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">{label}</p>
-          {loading
-            ? <div className="w-8 h-7 bg-gray-100 rounded animate-pulse mt-0.5" />
-            : <p className="text-2xl font-bold text-gray-900 mt-0.5">{value}</p>}
+      <div className="flex flex-col items-start text-left gap-2.5">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconBg}`}>
+          <Icon className={`w-4 h-4 ${iconColor}`} />
         </div>
-        <div className={`p-2.5 rounded-xl ${iconBg}`}>
-          <Icon className={`w-5 h-5 ${iconColor}`} />
-        </div>
+        {loading
+          ? <div className="w-10 h-8 bg-gray-100 rounded animate-pulse" />
+          : <p className="text-3xl font-extrabold text-gray-900 leading-none">{value}</p>}
+        <p className="text-sm font-semibold text-gray-500">{label}</p>
       </div>
     </CardContent>
   </Card>
@@ -218,7 +230,7 @@ function PasswordGateModal({ user, onClose, onSuccess }) {
             </div>
             <div>
               <p className={`text-sm font-bold ${cfg?.color ?? 'text-gray-800'}`}>{fullName}</p>
-              <p className="text-xs text-gray-400">@{user.username}</p>
+              <p className="text-xs text-gray-400">{user.email}</p>
             </div>
             <div className="ml-auto">
               <RoleBadge role={role} />
@@ -268,21 +280,31 @@ function ManageModal({ user, onClose, onSaved, onToggled, onArchived }) {
   const [form, setForm] = useState({
     first_name:     user.first_name     ?? '',
     last_name:      user.last_name      ?? '',
-    username:       user.username       ?? '',
     email:          user.email          ?? '',
     contact_number: user.contact_number ?? '',
     license_number: user.license_number ?? '',
     role:           role                ?? 'staff',
   });
 
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
+  const set = (k, v) => {
+    let next = v;
+    if (k === 'first_name' || k === 'last_name') next = sanitizeName(v);
+    if (k === 'contact_number') next = normalizeMobileInput(v);
+    setForm(f => ({ ...f, [k]: next }));
+    setErrors(e => ({ ...e, [k]: '' }));
+  };
 
   const validateEdit = () => {
     const e = {};
     if (!form.first_name.trim()) e.first_name = 'First name is required';
+    else if (!NAME_RE.test(form.first_name.trim())) e.first_name = 'First name must contain letters and spaces only';
     if (!form.last_name.trim())  e.last_name  = 'Last name is required';
-    if (!form.username.trim())   e.username   = 'Username is required';
+    else if (!NAME_RE.test(form.last_name.trim())) e.last_name = 'Last name must contain letters and spaces only';
     if (!form.email.trim())      e.email      = 'Email is required';
+    else if (!EMAIL_RE.test(form.email.trim())) e.email = 'Enter a valid email address';
+    if (form.contact_number?.trim() && !MOBILE_RE.test(form.contact_number.trim())) {
+      e.contact_number = 'Contact number must be +63 followed by 10 digits';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -294,7 +316,6 @@ function ManageModal({ user, onClose, onSaved, onToggled, onArchived }) {
     const payload = {
       first_name:     form.first_name.trim(),
       last_name:      form.last_name.trim(),
-      username:       form.username.trim(),
       email:          form.email.trim(),
       contact_number: form.contact_number?.trim() || null,
       license_number: form.license_number?.trim() || null,
@@ -403,18 +424,13 @@ function ManageModal({ user, onClose, onSaved, onToggled, onArchived }) {
                 {errors.last_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.last_name}</p>}
               </FieldRow>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <FieldRow label="Username" required>
-                <input value={form.username} onChange={e => set('username', e.target.value)} className={inputCls} />
-                {errors.username && <p className="text-xs text-red-500 mt-1">⚠ {errors.username}</p>}
-              </FieldRow>
-              <FieldRow label="Email" required>
-                <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} />
-                {errors.email && <p className="text-xs text-red-500 mt-1">⚠ {errors.email}</p>}
-              </FieldRow>
-            </div>
+            <FieldRow label="Email" required>
+              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} className={inputCls} />
+              {errors.email && <p className="text-xs text-red-500 mt-1">⚠ {errors.email}</p>}
+            </FieldRow>
             <FieldRow label="Contact Number">
               <input type="tel" value={form.contact_number} onChange={e => set('contact_number', e.target.value)} placeholder="+63 912 345 6789" className={inputCls} />
+              {errors.contact_number && <p className="text-xs text-red-500 mt-1">⚠ {errors.contact_number}</p>}
             </FieldRow>
 
             <FieldRow label="Role" required>
@@ -602,171 +618,10 @@ function ManageModal({ user, onClose, onSaved, onToggled, onArchived }) {
   );
 }
 
-/* ══════════════ ADD USER MODAL ══════════════ */
-function AddUserModal({ onClose, onSave, saving }) {
-  const [showPw,  setShowPw]  = useState(false);
-  const [showCpw, setShowCpw] = useState(false);
-  const [errors,  setErrors]  = useState({});
-
-  const blankForm = {
-    first_name: '', last_name: '', username: '', email: '',
-    contact_number: '', license_number: '',
-    role: 'staff', status: 'active', password: '', confirmPassword: '',
-  };
-
-  const [form, setForm] = useState(blankForm);
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErrors(e => ({ ...e, [k]: '' })); };
-
-  const validate = () => {
-    const e = {};
-    if (!form.first_name.trim()) e.first_name = 'First name is required';
-    if (!form.last_name.trim())  e.last_name  = 'Last name is required';
-    if (!form.username.trim())   e.username   = 'Username is required';
-    if (!form.email.trim())      e.email      = 'Email is required';
-    if (!form.password)                         e.password        = 'Password is required';
-    else if (form.password.length < 8)          e.password        = 'Min. 8 characters';
-    if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSubmit = () => { if (!validate()) return; onSave(form); };
-  const roleCfg = ROLE_CONFIG[form.role];
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Create New User</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Fill in the details below</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="First Name" required>
-              <input value={form.first_name} onChange={e => set('first_name', e.target.value)} placeholder="Juan" className={inputCls} />
-              {errors.first_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.first_name}</p>}
-            </FieldRow>
-            <FieldRow label="Last Name" required>
-              <input value={form.last_name} onChange={e => set('last_name', e.target.value)} placeholder="dela Cruz" className={inputCls} />
-              {errors.last_name && <p className="text-xs text-red-500 mt-1">⚠ {errors.last_name}</p>}
-            </FieldRow>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Username" required>
-              <input value={form.username} onChange={e => set('username', e.target.value)} placeholder="juan.delacruz" className={inputCls} />
-              {errors.username && <p className="text-xs text-red-500 mt-1">⚠ {errors.username}</p>}
-            </FieldRow>
-            <FieldRow label="Email" required>
-              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} placeholder="juan@clinic.com" className={inputCls} />
-              {errors.email && <p className="text-xs text-red-500 mt-1">⚠ {errors.email}</p>}
-            </FieldRow>
-          </div>
-          <FieldRow label="Contact Number">
-            <input type="tel" value={form.contact_number} onChange={e => set('contact_number', e.target.value)} placeholder="+63 912 345 6789" className={inputCls} />
-          </FieldRow>
-
-          <FieldRow label="Role" required>
-            <div className="grid grid-cols-4 gap-2">
-              {ROLE_OPTIONS.map(r => {
-                const cfg = ROLE_CONFIG[r]; const Icon = cfg.icon; const selected = form.role === r;
-                return (
-                  <button key={r} type="button" onClick={() => set('role', r)}
-                    className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all
-                      ${selected ? `${cfg.bg} ${cfg.border} ${cfg.color}` : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                    <Icon className="w-5 h-5" /><span className="text-xs font-bold">{cfg.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            {roleCfg && (
-              <div className={`mt-2 rounded-lg p-3 ${roleCfg.bg} border ${roleCfg.border}`}>
-                <p className={`text-xs font-bold ${roleCfg.color} mb-1`}>Access:</p>
-                {roleCfg.access.map(a => (
-                  <p key={a} className={`text-xs ${roleCfg.color} flex items-center gap-1`}><Check className="w-3 h-3" /> {a}</p>
-                ))}
-              </div>
-            )}
-          </FieldRow>
-
-          {form.role === 'doctor' && (
-            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-wide flex items-center gap-1.5 mb-3">
-                <Stethoscope className="w-3.5 h-3.5" /> Doctor Details
-              </p>
-              <FieldRow label="License Number">
-                <input value={form.license_number} onChange={e => set('license_number', e.target.value)} placeholder="PRC-XXXXX" className={inputCls} />
-              </FieldRow>
-            </div>
-          )}
-
-          <FieldRow label="Status">
-            <div className="flex items-center gap-3">
-              <Switch checked={form.status === 'active'} onCheckedChange={v => set('status', v ? 'active' : 'inactive')} />
-              <StatusBadge status={form.status} />
-            </div>
-          </FieldRow>
-
-          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5" /> Set Password
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <FieldRow label="Password" required>
-                <div className="relative">
-                  <input type={showPw ? 'text' : 'password'} value={form.password} onChange={e => set('password', e.target.value)} placeholder="Min. 8 characters" className={`${inputCls} pr-10`} />
-                  <button type="button" onClick={() => setShowPw(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.password && <p className="text-xs text-red-500 mt-1">⚠ {errors.password}</p>}
-              </FieldRow>
-              <FieldRow label="Confirm Password" required>
-                <div className="relative">
-                  <input type={showCpw ? 'text' : 'password'} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} placeholder="Re-enter" className={`${inputCls} pr-10`} />
-                  <button type="button" onClick={() => setShowCpw(p => !p)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
-                    {showCpw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.confirmPassword && <p className="text-xs text-red-500 mt-1">⚠ {errors.confirmPassword}</p>}
-              </FieldRow>
-            </div>
-          </div>
-
-          {errors.server && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-              <p className="text-xs text-red-600 font-semibold">⚠ {errors.server}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-          <button onClick={() => setForm(blankForm)} className="text-sm text-gray-400 hover:text-gray-600 font-medium flex items-center gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" /> Clear Form
-          </button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px]">
-              {saving ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Saving…</> : <><Check className="w-4 h-4 mr-1.5" /> Create User</>}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ══════════════ MAIN PAGE ══════════════ */
 export default function UserManagementPage() {
   const [users,       setUsers]       = useState([]);
   const [loading,     setLoading]     = useState(true);
-  const [saving,      setSaving]      = useState(false);
   const [search,      setSearch]      = useState('');
   const [roleFilter,  setRoleFilter]  = useState('All Roles');
   const [statusFil,   setStatusFil]   = useState('All Status');
@@ -805,34 +660,6 @@ export default function UserManagementPage() {
   const doctors  = users.filter(u => u.role?.toLowerCase() === 'doctor').length;
   const staff    = users.filter(u => u.role?.toLowerCase() === 'staff').length;
 
-  const handleAddSave = async (form) => {
-    setSaving(true);
-    const payload = {
-      first_name:     form.first_name.trim(),
-      last_name:      form.last_name.trim(),
-      username:       form.username.trim(),
-      email:          form.email.trim(),
-      contact_number: form.contact_number?.trim() || null,
-      license_number: form.license_number?.trim() || null,
-      role:           form.role.charAt(0).toUpperCase()   + form.role.slice(1),
-      status:         form.status.charAt(0).toUpperCase() + form.status.slice(1),
-      password:       form.password,
-    };
-    try {
-      const { ok, data } = await apiFetch('/users', { method: 'POST', body: JSON.stringify(payload) });
-      if (ok) {
-        await fetchUsers();
-        toast({ title: 'User created', description: `${data.first_name} ${data.last_name} saved.` });
-        setModal(null);
-      } else {
-        const msg = data.errors ? Object.values(data.errors).flat().join(' | ') : data.message ?? 'An error occurred.';
-        toast({ title: 'Validation Error', description: msg, variant: 'destructive' });
-      }
-    } catch {
-      toast({ title: 'Network error', description: 'Could not reach the server.', variant: 'destructive' });
-    } finally { setSaving(false); }
-  };
-
   const handleManageSaved = async (data) => {
     await fetchUsers();
     toast({ title: 'User updated', description: `${data.first_name} ${data.last_name} saved.` });
@@ -858,45 +685,14 @@ export default function UserManagementPage() {
       <div className="space-y-5">
 
         {/* KPI CARDS */}
-        <div className="grid grid-cols-3 md:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <KPICard label="Total"    value={total}    icon={Users}       iconBg="bg-blue-50"   iconColor="text-blue-600"   loading={loading} />
           <KPICard label="Active"   value={active}   icon={UserCheck}   iconBg="bg-green-50"  iconColor="text-green-600"  loading={loading} />
           <KPICard label="Inactive" value={inactive} icon={UserX}       iconBg="bg-gray-50"   iconColor="text-gray-500"   loading={loading} />
           <KPICard label="Managers" value={managers} icon={Briefcase}   iconBg="bg-orange-50" iconColor="text-orange-600" loading={loading} />
-          <KPICard label="Admins"   value={admins}   icon={Shield}      iconBg="bg-purple-50" iconColor="text-purple-600" loading={loading} />
           <KPICard label="Doctors"  value={doctors}  icon={Stethoscope} iconBg="bg-blue-50"   iconColor="text-blue-600"   loading={loading} />
           <KPICard label="Staff"    value={staff}    icon={Users}       iconBg="bg-teal-50"   iconColor="text-teal-600"   loading={loading} />
         </div>
-
-        {/* ROLE ACCESS REFERENCE */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="w-5 h-5 text-blue-600" /> Role Access Reference
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(ROLE_CONFIG).map(([key, cfg]) => {
-                const Icon = cfg.icon;
-                return (
-                  <div key={key} className={`rounded-xl border p-4 ${cfg.bg} ${cfg.border}`}>
-                    <div className={`flex items-center gap-2 mb-3 ${cfg.color}`}>
-                      <Icon className="w-5 h-5" /><span className="font-bold text-sm">{cfg.label}</span>
-                    </div>
-                    <ul className="space-y-1.5">
-                      {cfg.access.map(a => (
-                        <li key={a} className={`flex items-center gap-1.5 text-xs font-medium ${cfg.color}`}>
-                          <Check className="w-3 h-3 flex-shrink-0" /> {a}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
 
         {/* TABLE */}
         <Card data-testid="users-list-card">
@@ -915,7 +711,7 @@ export default function UserManagementPage() {
                 <div className="relative flex-1 min-w-[220px]">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Search</label>
                   <Search className="absolute left-3 bottom-2.5 w-4 h-4 text-gray-400" />
-                  <input placeholder="Name, username, email…" value={search}
+                  <input placeholder="Name, email…" value={search}
                     onChange={e => setSearch(e.target.value)} className={`${inputCls} pl-9`} />
                 </div>
                 <div className="min-w-[140px]">
@@ -927,9 +723,6 @@ export default function UserManagementPage() {
                   <SelectBox value={statusFil} onChange={setStatusFil} options={STATUSES} />
                 </div>
                 <div className="flex-1" />
-                <Button onClick={() => setModal({ type: 'add' })} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  <Plus className="w-4 h-4 mr-2" /> Create User
-                </Button>
               </div>
             </CardContent>
 
@@ -937,7 +730,7 @@ export default function UserManagementPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-y border-gray-100 bg-gray-50">
-                    {['Name / Username', 'Role', 'Contact', 'Status', 'Date Created', 'Actions'].map(h => (
+                    {['Name', 'Role', 'Contact', 'Status', 'Date Created', 'Actions'].map(h => (
                       <th key={h} className="text-left py-2.5 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -970,7 +763,7 @@ export default function UserManagementPage() {
                             </div>
                             <div>
                               <p className="font-semibold text-gray-900 leading-tight">{fullName(user)}</p>
-                              <p className="text-xs text-gray-400">@{user.username}</p>
+                              <p className="text-xs font-mono text-gray-400">{getPublicId(user)}</p>
                               <p className="text-xs text-gray-400">{user.email}</p>
                             </div>
                           </div>
@@ -1007,9 +800,6 @@ export default function UserManagementPage() {
 
       </div>
 
-      {modal?.type === 'add' && (
-        <AddUserModal onClose={() => !saving && setModal(null)} onSave={handleAddSave} saving={saving} />
-      )}
       {modal?.type === 'password-gate' && (
         <PasswordGateModal
           user={modal.user}

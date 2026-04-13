@@ -30,7 +30,7 @@ const apiFetch = async (path, options = {}) => {
 };
 
 /* ══════════════ MAPPER ══════════════ */
-const mapPatient = (p) => ({
+const mapPatient = (p, medicalHistory = []) => ({
   id:               p.id,
   first_name:       p.first_name  ?? '',
   last_name:        p.last_name   ?? '',
@@ -54,6 +54,8 @@ const mapPatient = (p) => ({
   status:           (p.status    ?? 'active').toLowerCase(),
   dateRegistered:   p.created_at?.split('T')[0] ?? '',
   lastVisit:        p.last_visit ?? '',
+  medicalHistory,
+  hasMedicalHistory: medicalHistory.length > 0,
 });
 
 /* ══════════════ HELPERS ══════════════ */
@@ -78,6 +80,14 @@ const StatusBadge = ({ status }) => (
     ${status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
     {status === 'active' ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
     {status === 'active' ? 'Active' : 'Inactive'}
+  </span>
+);
+
+const MedicalHistoryBadge = ({ hasHistory }) => (
+  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold
+    ${hasHistory ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+    <Heart className="w-3 h-3" />
+    {hasHistory ? 'Recorded' : 'None'}
   </span>
 );
 
@@ -300,7 +310,7 @@ function PatientModal({ patient, onClose, onToggleStatus }) {
 
   const tabs = [
     { key: 'personal', label: 'Personal Info', icon: Users    },
-    { key: 'medical',  label: 'Medical Info',  icon: Heart    },
+    { key: 'medical',  label: 'Medical History', icon: Heart  },
     { key: 'crm',      label: 'CRM Info',      icon: Activity },
   ];
 
@@ -327,23 +337,11 @@ function PatientModal({ patient, onClose, onToggleStatus }) {
               <div>
                 <h2 className="text-base font-bold text-gray-900">{patient.name}</h2>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-xs text-gray-400">Patient ID: {patient.id}</p>
                   <StatusBadge status={patient.status} />
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2">
-                <Switch
-                  checked={patient.status === 'active'}
-                  onCheckedChange={() => setConfirmToggle(true)}
-                  disabled={toggling}
-                />
-                <span className="text-xs text-gray-500 font-medium">
-                  {toggling ? 'Updating…' : patient.status === 'active' ? 'Active' : 'Inactive'}
-                </span>
-                {toggling && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />}
-              </div>
+            <div className="flex items-center gap-2">    
               <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
                 <X className="w-5 h-5 text-gray-400" />
               </button>
@@ -392,16 +390,37 @@ function PatientModal({ patient, onClose, onToggleStatus }) {
               </div>
             )}
             {tab === 'medical' && (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                <ViewField label="Blood Type"          value={patient.blood_type} />
-                <ViewField label="Known Allergies"     value={patient.allergies} />
-                <ViewField label="Existing Conditions" value={patient.conditions} />
-                <div className="col-span-2 space-y-1">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Current Medications / Notes</p>
-                  <p className="text-sm text-gray-800 font-medium whitespace-pre-wrap">
-                    {patient.notes || <span className="text-gray-300 italic">—</span>}
-                  </p>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Medical History</p>
+                  <MedicalHistoryBadge hasHistory={patient.hasMedicalHistory} />
+                  <p className="text-xs text-gray-500 mt-2">Only limited history is shown in this panel.</p>
                 </div>
+
+                {patient.hasMedicalHistory ? (
+                  <div className="overflow-hidden rounded-xl border border-gray-200">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-100">
+                          <th className="text-left py-2.5 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Date of Visit</th>
+                          <th className="text-left py-2.5 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Attending Doctor</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {patient.medicalHistory.map((entry, idx) => (
+                          <tr key={`${entry.visitDate}-${entry.doctorName}-${idx}`}>
+                            <td className="py-2.5 px-4 text-sm text-gray-700">{fmtDate(entry.visitDate)}</td>
+                            <td className="py-2.5 px-4 text-sm text-gray-700">{entry.doctorName || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center">
+                    <p className="text-sm text-gray-400">No medical history records available.</p>
+                  </div>
+                )}
               </div>
             )}
             {tab === 'crm' && (
@@ -504,10 +523,45 @@ export default function PatientsPage() {
     setLoading(true);
     setError(null);
     try {
-      const { ok, data } = await apiFetch('/patients');
+      const [{ ok, data }, historyRes] = await Promise.all([
+        apiFetch('/patients'),
+        apiFetch('/patients/medical-history'),
+      ]);
+
       if (!ok) throw new Error(data.message ?? 'Server error');
+
       const list = Array.isArray(data) ? data : (data.data ?? []);
-      setPatients(list.map(mapPatient));
+      const historyRows = historyRes.ok
+        ? (Array.isArray(historyRes.data) ? historyRes.data : [])
+        : [];
+
+      const historyByPatient = historyRows.reduce((acc, row) => {
+        const patientId = row?.patient_id;
+        if (!patientId) return acc;
+
+        const visitDate = row?.visit_date;
+        const doctorName = row?.doctor_name || 'Unassigned';
+        if (!visitDate) return acc;
+
+        if (!acc[patientId]) acc[patientId] = [];
+        acc[patientId].push({ visitDate, doctorName });
+        return acc;
+      }, {});
+
+      for (const key of Object.keys(historyByPatient)) {
+        historyByPatient[key].sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+      }
+
+      const mapped = list.map((p) => mapPatient(p, historyByPatient[p.id] ?? []));
+      setPatients(mapped);
+
+      if (!historyRes.ok) {
+        toast({
+          title: 'Medical history unavailable',
+          description: historyRes.data?.message ?? 'Medical history records could not be loaded.',
+          variant: 'destructive',
+        });
+      }
     } catch (err) {
       setError(err.message);
       toast({ title: 'Failed to load patients', description: err.message, variant: 'destructive' });

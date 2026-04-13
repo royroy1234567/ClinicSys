@@ -3,10 +3,10 @@ import MainLayout from '../components/layouts/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import {
-  CalendarIcon, Plus, Clock, User, Stethoscope, Search, RefreshCw,
-  Eye, X, Check, ChevronDown, ChevronLeft, ChevronRight,
+  CalendarIcon, Clock, User, Stethoscope, Search, RefreshCw,
+  Eye, X, ChevronDown, ChevronLeft, ChevronRight,
   CheckCircle2, XCircle, UserX, Printer, Download,
-  PlayCircle, LogIn, Hash, Bell, ClipboardList, AlertCircle,
+  PlayCircle, LogIn, Hash, ClipboardList, AlertCircle,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════
@@ -52,9 +52,6 @@ const STATUS_CFG = {
   no_show:    { label:'No-show',    bg:'bg-gray-100',   text:'text-gray-500',   icon:UserX        },
 };
 
-const DOCTORS   = ['Dr. Sarah Smith','Dr. Michael Chen','Dr. James Lim','Dr. Reyna Torres','Dr. Ana Reyes'];
-const PATIENTS  = ['John Doe','Jane Smith','Robert Johnson','Maria Santos','Carlos Reyes','Ana Cruz','Ben Torres','Carla Mendoza','David Lim','Elena Ramos'];
-const APT_TYPES = ['General Consultation','Follow-up','Specialist Consultation','Pediatric Consult','Executive Check-up'];
 const STATUSES  = Object.entries(STATUS_CFG).map(([k,v]) => ({ value:k, label:v.label }));
 
 const fmtTime = t => {
@@ -65,13 +62,6 @@ const fmtTime = t => {
 };
 const fmtDate = d =>
   d ? new Date(d+'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : '—';
-
-const calcEnd = (start, dur) => {
-  if (!start||!dur) return '';
-  const [h,m] = start.split(':').map(Number);
-  const total = h*60+m+parseInt(dur);
-  return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
-};
 
 const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
 
@@ -95,15 +85,6 @@ const SelectBox = ({ value, onChange, options, placeholder }) => (
       {options.map(o=><option key={o.value??o} value={o.value??o}>{o.label??o}</option>)}
     </select>
     <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-  </div>
-);
-
-const FieldRow = ({ label, required, children }) => (
-  <div className="space-y-1.5">
-    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    {children}
   </div>
 );
 
@@ -195,134 +176,9 @@ const SkeletonRows = () => (
 );
 
 /* ══════════════════════════════════════
-   BOOK APPOINTMENT MODAL
-══════════════════════════════════════ */
-const EMPTY_FORM = { patient:'', doctor:'', date:TODAY, start_time:'', duration:'30', type:'General Consultation', reason:'', notes:'' };
-
-function BookModal({ allApts, onClose, onSave, saving }) {
-  const [form,   setForm]   = useState({ ...EMPTY_FORM });
-  const [errors, setErrors] = useState({});
-
-  const set = (k,v) => { setForm(f=>({...f,[k]:v})); setErrors(e=>({...e,[k]:''})); };
-
-  const handleTimeChange = v => {
-    setForm(f=>({...f, start_time:v, end_time:calcEnd(v,f.duration)}));
-    setErrors(e=>({...e, start_time:''}));
-  };
-  const handleDurChange = v =>
-    setForm(f=>({...f, duration:v, end_time:calcEnd(f.start_time,v)}));
-
-  const validate = () => {
-    const e = {};
-    if (!form.patient)    e.patient    = 'Select a patient';
-    if (!form.doctor)     e.doctor     = 'Select a doctor';
-    if (!form.date)       e.date       = 'Date required';
-    if (!form.start_time) e.start_time = 'Start time required';
-    if (!form.reason)     e.reason     = 'Reason required';
-    const end = calcEnd(form.start_time, form.duration);
-    const conflict = allApts.find(a => {
-      if (a.date!==form.date || a.doctor!==form.doctor) return false;
-      if (['cancelled','no_show'].includes(a.status)) return false;
-      return a.start_time<end && a.end_time>form.start_time;
-    });
-    if (conflict) e.start_time = `Conflict with appt at ${fmtTime(conflict.start_time)}`;
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSave = () => {
-    if (!validate()) return;
-    onSave({ ...form, end_time: calcEnd(form.start_time, form.duration) });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Book New Appointment</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Fill in the appointment details below</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100"><X className="w-5 h-5 text-gray-400" /></button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          <FieldRow label="Patient" required>
-            <SelectBox value={form.patient} onChange={v=>set('patient',v)} placeholder="Select patient…" options={PATIENTS.map(p=>({value:p,label:p}))} />
-            {errors.patient && <p className="text-xs text-red-500">⚠ {errors.patient}</p>}
-          </FieldRow>
-
-          <FieldRow label="Doctor" required>
-            <SelectBox value={form.doctor} onChange={v=>set('doctor',v)} placeholder="Select doctor…" options={DOCTORS.map(d=>({value:d,label:d}))} />
-            {errors.doctor && <p className="text-xs text-red-500">⚠ {errors.doctor}</p>}
-          </FieldRow>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Date" required>
-              <input type="date" value={form.date} onChange={e=>set('date',e.target.value)} className={inputCls} />
-              {errors.date && <p className="text-xs text-red-500">⚠ {errors.date}</p>}
-            </FieldRow>
-            <FieldRow label="Start Time" required>
-              <input type="time" value={form.start_time} onChange={e=>handleTimeChange(e.target.value)} className={inputCls} />
-              {errors.start_time && <p className="text-xs text-red-500">⚠ {errors.start_time}</p>}
-            </FieldRow>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FieldRow label="Duration">
-              <SelectBox value={form.duration} onChange={handleDurChange}
-                options={[{value:'15',label:'15 min'},{value:'30',label:'30 min'},{value:'45',label:'45 min'},{value:'60',label:'1 hour'},{value:'90',label:'1.5 hrs'},{value:'120',label:'2 hours'}]} />
-            </FieldRow>
-            <FieldRow label="Type">
-              <SelectBox value={form.type} onChange={v=>set('type',v)} options={APT_TYPES.map(t=>({value:t,label:t}))} />
-            </FieldRow>
-          </div>
-
-          {form.start_time && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-500 flex-shrink-0" />
-              <p className="text-xs text-blue-700 font-medium">
-                {fmtTime(form.start_time)} → {fmtTime(calcEnd(form.start_time, form.duration))} &nbsp;({form.duration} min)
-              </p>
-            </div>
-          )}
-
-          <FieldRow label="Reason for Visit" required>
-            <input value={form.reason} onChange={e=>set('reason',e.target.value)}
-              placeholder="Chief complaint / purpose of visit…" className={inputCls} />
-            {errors.reason && <p className="text-xs text-red-500">⚠ {errors.reason}</p>}
-          </FieldRow>
-
-          <FieldRow label="Notes (optional)">
-            <textarea value={form.notes} onChange={e=>set('notes',e.target.value)}
-              placeholder="Additional notes or instructions…" rows={2}
-              className={`${inputCls} resize-none`} />
-          </FieldRow>
-        </div>
-
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
-          <button onClick={()=>{setForm({...EMPTY_FORM});setErrors({});}}
-            className="text-sm text-gray-400 hover:text-gray-600 font-medium flex items-center gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" /> Reset
-          </button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {saving
-                ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</>
-                : <><Check className="w-4 h-4 mr-1.5" />Save Appointment</>}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════
    VIEW MODAL
 ══════════════════════════════════════ */
-function ViewModal({ apt, onClose, onCheckin }) {
+function ViewModal({ apt, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e=>e.stopPropagation()}>
@@ -351,7 +207,6 @@ function ViewModal({ apt, onClose, onCheckin }) {
               { Icon:CalendarIcon, label:'Date',    value:fmtDate(apt.date) },
               { Icon:Clock,        label:'Time',    value:`${fmtTime(apt.start_time)} – ${fmtTime(apt.end_time)}` },
               { Icon:ClipboardList,label:'Type',    value:apt.type    },
-              { Icon:Bell,         label:'Reason',  value:apt.reason  },
             ].map(r=>(
               <div key={r.label} className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -400,6 +255,21 @@ const normalise = (raw) => ({
   notes:      raw.notes            ?? '',
 });
 
+const exportCsv = (rows, fileName) => {
+  const csv = rows
+    .map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
 /* ══════════════════════════════════════
    MAIN PAGE
 ══════════════════════════════════════ */
@@ -413,7 +283,6 @@ const StaffAppointments = () => {
   const [filterQ,    setFilterQ]    = useState('');
   const [page,       setPage]       = useState(1);
   const [modal,      setModal]      = useState(null);
-  const [saving,     setSaving]     = useState(false);
 
   /* ── Fetch from API ── */
   const fetchApts = useCallback(async () => {
@@ -454,8 +323,6 @@ const StaffAppointments = () => {
     cancelled: todayApts.filter(a => ['cancelled','no_show'].includes(a.status)).length,
   };
 
-  const nextQueue = Math.max(0, ...apts.filter(a => a.queue).map(a => a.queue)) + 1;
-
   /* ── Client-side filters ── */
   const filtered = useMemo(() => apts.filter(a => {
     if (filterDate && a.date !== filterDate)   return false;
@@ -476,58 +343,43 @@ const StaffAppointments = () => {
   const paginated  = filtered.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE);
 
   /* ── Actions (optimistic updates; re-fetch on failure) ── */
-  const handleCheckin = async (id) => {
-    // Optimistic
-    setApts(prev => prev.map(a => a.id === id ? { ...a, status:'checked_in', queue:nextQueue } : a));
-    try {
-      // Adjust endpoint to your check-in route
-      await apiFetch(`/appointments/${id}/checkin`, { method: 'POST' });
-    } catch {
-      // Rollback on failure
-      fetchApts();
-    }
-  };
-
-  const handleSave = async (form) => {
-    setSaving(true);
-    try {
-      const created = await apiFetch('/appointments', {
-        method: 'POST',
-        body: JSON.stringify({
-          // Map internal form fields → API fields your controller expects
-          doctor_id:        form.doctor,     // ⚠ replace with actual doctor ID if you have it
-          service_id:       null,
-          appointment_date: form.date,
-          appointment_time: form.start_time,
-          reason:           form.reason,
-          notes:            form.notes,
-        }),
-      });
-      // Refresh list to get the server-assigned ID & status
-      await fetchApts();
-      setModal(null);
-    } catch (err) {
-      alert(`Failed to save: ${err.message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /* ── Derive doctor list from fetched data (falls back to DOCTORS constant) ── */
+  /* ── Derive doctor list from fetched data ── */
   const doctorOptions = useMemo(() => {
     const fromData = [...new Set(apts.map(a => a.doctor))].filter(Boolean);
-    return fromData.length ? fromData : DOCTORS;
+    return fromData;
   }, [apts]);
 
   const resetFilters = () => {
     setFilterDate(TODAY); setFilterDoc(''); setFilterStat(''); setFilterQ(''); setPage(1);
   };
 
+  const handleExportPdf = () => {
+    const lines = filtered.map((a) => `${a.id} | ${a.date} | ${a.start_time} | ${a.patient} | ${a.doctor} | ${a.status}`);
+    const content = `Staff Appointments Report\nGenerated: ${new Date().toLocaleString('en-PH')}\nRecords: ${filtered.length}\n\n${lines.join('\n')}`;
+    const blob = new Blob([content], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `staff-appointments-${new Date().toISOString().slice(0, 10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    const rows = [
+      ['ID', 'Date', 'Start', 'End', 'Patient', 'Doctor', 'Type', 'Status', 'Queue'],
+      ...filtered.map((a) => [a.id, a.date, a.start_time, a.end_time || '', a.patient, a.doctor, a.type, a.status, a.queue ?? '']),
+    ];
+    exportCsv(rows, `staff-appointments-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
   return (
     <MainLayout title="Appointment Management" subtitle="Manage and schedule patient appointments.">
       <div className="space-y-5">
 
-        {/* ══ DATE + BOOK BUTTON ══ */}
+        {/* ══ DATE HEADER ══ */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <CalendarIcon className="w-3.5 h-3.5 text-blue-500" />
@@ -540,9 +392,6 @@ const StaffAppointments = () => {
               className="h-9 text-xs gap-1.5">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               {loading ? 'Loading…' : 'Refresh'}
-            </Button>
-            <Button onClick={()=>setModal({type:'add'})} className="bg-blue-600 hover:bg-blue-700 text-white">
-              <Plus className="w-4 h-4 mr-2" /> Book Appointment
             </Button>
           </div>
         </div>
@@ -605,8 +454,11 @@ const StaffAppointments = () => {
                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={()=>window.print()}>
                   <Printer className="w-3 h-3" /> Print
                 </Button>
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                  <Download className="w-3 h-3" /> Export
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleExportPdf}>
+                  <Download className="w-3 h-3" /> PDF
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={handleExportExcel}>
+                  <Download className="w-3 h-3" /> Excel
                 </Button>
               </div>
             </div>
@@ -632,12 +484,6 @@ const StaffAppointments = () => {
                         <p className="text-sm text-gray-400">
                           {error ? 'Could not load appointments.' : 'No appointments found.'}
                         </p>
-                        {!error && (
-                          <Button className="mt-4 bg-blue-600 hover:bg-blue-700 text-white text-xs h-8"
-                            onClick={()=>setModal({type:'add'})}>
-                            <Plus className="w-3.5 h-3.5 mr-1.5" /> Book Appointment
-                          </Button>
-                        )}
                       </td>
                     </tr>
                   )}
@@ -676,27 +522,10 @@ const StaffAppointments = () => {
       </div>
 
       {/* ══ MODALS ══ */}
-      {modal?.type==='add' && (
-        <BookModal
-          allApts={apts}
-          onClose={()=>setModal(null)}
-          onSave={handleSave}
-          saving={saving}
-        />
-      )}
       {modal?.type==='view' && (
         <ViewModal
           apt={modal.apt}
           onClose={()=>setModal(null)}
-          onCheckin={id=>{ handleCheckin(id); }}
-        />
-      )}
-      {modal?.type==='checkin' && (
-        <CheckinModal
-          apt={modal.apt}
-          nextQueue={nextQueue}
-          onClose={()=>setModal(null)}
-          onConfirm={()=>{ handleCheckin(modal.apt.id); setModal(null); }}
         />
       )}
     </MainLayout>

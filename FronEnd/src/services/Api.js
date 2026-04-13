@@ -26,8 +26,18 @@ const authHeaders = () => ({
   'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
 });
 
+const readErrorMessage = async (res, fallback) => {
+  try {
+    const body = await res.json();
+    return body?.message || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const mapDoctor = (u) => ({
   id:             u.user_id,
+  public_id:      u.public_id || null,
   name:           `Dr. ${u.first_name} ${u.last_name}`,
   specialization: u.specialization || 'General',
   status:         u.status?.toLowerCase() === 'active' ? 'active' : 'inactive',
@@ -38,6 +48,7 @@ const mapDoctor = (u) => ({
 
 const mapPatient = (p) => ({
   id:         p.id,
+  public_id:  p.public_id || null,
   first_name: p.first_name,
   middle_name:p.middle_name,
   last_name:  p.last_name,
@@ -158,6 +169,13 @@ export const api = {
       if (!res.ok) throw new Error('Failed to fetch doctor availability');
       return res.json();
     },
+    getSchedules: async (id) => {
+      const res = await fetch(`${API_BASE}/doctor-schedules?user_id=${id}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error('Failed to fetch doctor schedules');
+      return res.json();
+    },
     updateAvailability: async (id, availability_status) => {
       const res = await fetch(`${API_BASE}/users/${id}/availability`, {
         method: 'PATCH',
@@ -179,13 +197,17 @@ export const api = {
       return res.json();
     },
     getAll: async (filters = {}) => {
-      await delay();
-      let result = [...appointments];
-      if (filters.date)       result = result.filter(a => a.date      === filters.date);
-      if (filters.doctor_id)  result = result.filter(a => a.doctor_id === filters.doctor_id);
-      if (filters.patient_id) result = result.filter(a => a.patient_id=== filters.patient_id);
-      if (filters.status)     result = result.filter(a => a.status    === filters.status);
-      return result;
+      const params = new URLSearchParams();
+      if (filters.date) params.set('date', String(filters.date));
+      if (filters.doctor_id) params.set('doctor_id', String(filters.doctor_id));
+      if (filters.patient_id) params.set('patient_id', String(filters.patient_id));
+      if (filters.status) params.set('status', String(filters.status));
+      const query = params.toString();
+      const res = await fetch(`${API_BASE}/appointments${query ? `?${query}` : ''}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch appointments'));
+      return res.json();
     },
     create: async (data) => {
       await delay();
@@ -207,14 +229,31 @@ export const api = {
       }
       throw new Error('Appointment not found');
     },
-    cancel: async (id) => {
-      await delay();
-      const index = appointments.findIndex(a => a.id === id);
-      if (index !== -1) {
-        appointments[index].status = 'cancelled';
-        return { success: true };
+    cancel: async (id, cancellationReason) => {
+      const res = await fetch(`${API_BASE}/appointments/${id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          cancellation_reason: cancellationReason || null,
+        }),
+      });
+      if (!res.ok) {
+        const msg = await readErrorMessage(res, 'Failed to cancel appointment');
+        throw new Error(msg);
       }
-      throw new Error('Appointment not found');
+      return res.json();
+    },
+    reschedule: async (id, payload) => {
+      const res = await fetch(`${API_BASE}/appointments/${id}/reschedule`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const msg = await readErrorMessage(res, 'Failed to reschedule appointment');
+        throw new Error(msg);
+      }
+      return res.json();
     },
   },
 
@@ -260,6 +299,18 @@ export const api = {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || 'Failed to submit rating');
+      }
+      return res.json();
+    },
+    respondFeedback: async (consultationId, payload) => {
+      const res = await fetch(`${API_BASE}/consultations/${consultationId}/respond-feedback`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to send feedback response');
       }
       return res.json();
     },
@@ -375,12 +426,12 @@ queue: {
   },
   addWalkin: async (payload) => {
     const res = await fetch(`${API_BASE}/queue-entries/walkin`, { method:'POST', headers: authHeaders(), body: JSON.stringify(payload) });
-    if (!res.ok) throw new Error('Failed to add walk-in');
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to add walk-in'));
     return res.json();
   },
   updateStatus: async (id, status) => {
     const res = await fetch(`${API_BASE}/queue-entries/${id}/status`, { method:'PATCH', headers: authHeaders(), body: JSON.stringify({ status }) });
-    if (!res.ok) throw new Error('Failed to update status');
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update status'));
     return res.json();
   },
   assignDoctor: async (id, doctor_id) => {
@@ -389,7 +440,7 @@ queue: {
       headers: authHeaders(),
       body: JSON.stringify({ doctor_id }),
     });
-    if (!res.ok) throw new Error('Failed to assign doctor');
+    if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to assign doctor'));
     return res.json();
   },
   checkInAppointment: async (appointmentId) => {

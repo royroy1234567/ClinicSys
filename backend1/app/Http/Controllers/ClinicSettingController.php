@@ -31,6 +31,20 @@ class ClinicSettingController extends Controller
             'tin'      => 'nullable|string|max:50',
             'phic'     => 'nullable|string|max:50',
             'schedule' => 'nullable|string|max:255',
+            'security_two_factor'         => 'nullable|boolean',
+            'security_two_factor_channel' => 'nullable|in:email',
+            'security_session_timeout'    => 'nullable|in:0,15,30,60,120',
+            'security_password_expiry'    => 'nullable|in:0,30,60,90,180',
+            'security_login_attempts'     => 'nullable|in:3,5,10',
+            'security_audit_log'          => 'nullable|boolean',
+            'security_ip_restriction'     => 'nullable|boolean',
+            'security_force_https'        => 'nullable|boolean',
+            'system_auto_backup'          => 'nullable|boolean',
+            'system_backup_frequency'     => 'nullable|in:hourly,daily,weekly,monthly',
+            'system_backup_retention'     => 'nullable|in:7,14,30,90',
+            'system_max_upload_size'      => 'nullable|in:5,10,25,50',
+            'system_maintenance_mode'     => 'nullable|boolean',
+            'system_last_backup_at'       => 'nullable|date',
         ]);
 
         foreach ($data as $key => $value) {
